@@ -145,7 +145,6 @@ func (d *Displayer) buildDTC() *tview.Table {
 	tbl.SetCell(0, 0, tview.NewTableCell("Code").SetSelectable(false).SetAlign(tview.AlignCenter))
 	tbl.SetCell(0, 1, tview.NewTableCell("Description").SetSelectable(false).SetAlign(tview.AlignCenter))
 
-	// update in refresh loop; provide a method to redraw
 	return tbl
 }
 
@@ -160,7 +159,7 @@ func (d *Displayer) updateValues() {
 	d.totalKilometersText.SetText(fmt.Sprintf("Total Kilometers: %d", totalKilometers))
 	d.oilTempText.SetText(fmt.Sprintf("Oil Temp (C): %.1f", oilTemp))
 
-	d.helpText.SetText("Keys: 1 Dashboard  2 DTC  q Quit")
+	d.helpText.SetText("[1 - Dashboard] [2 - DTC] [q - Quit]")
 
 	if d.statusText != nil {
 		status := "[red]disconnected[white]"
