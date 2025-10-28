@@ -1,7 +1,9 @@
-package obd
+package serial
 
 import (
 	"bufio"
+	"cargo/internal/obd"
+	"cargo/pkg/log"
 	"context"
 	"errors"
 	"fmt"
@@ -13,11 +15,9 @@ import (
 	"github.com/tarm/serial"
 )
 
+var CommonBaudRates = []int{9600, 38400, 115200}
+
 // SerialOBD implements OBDProvider backed by a serial (ELM327-like) device.
-// It attempts to (re)connect with exponential backoff and does light polling
-// of RPM and coolant using OBD-II PIDs (010C for RPM, 0105 for coolant).
-// This is a pragmatic, small implementation — production-ready code would
-// need more robust parsing and support for multiple protocols.
 type SerialOBD struct {
 	mu        sync.RWMutex
 	portName  string
@@ -26,16 +26,16 @@ type SerialOBD struct {
 	running   bool
 	rpm       int
 	coolant   float64
-	errors    []DTCEntry
+	errors    []obd.DTCEntry
 	stopCh    chan struct{}
 	connected bool
 }
 
-// NewSerialOBD creates a SerialOBD for the given device path (e.g., COM3 or /dev/ttyUSB0).
-func NewSerialOBD() *SerialOBD {
+// NewSerialOBD creates a SerialOBD.
+func New() obd.OBDProvider {
 	return &SerialOBD{
 		portName: detectPlatformSerialDev(),
-		baud:     9600, // Try lower baud rate
+		baud:     38400,
 		stopCh:   make(chan struct{}),
 		rpm:      0,
 		coolant:  0,
@@ -72,7 +72,7 @@ func (s *SerialOBD) Stop() {
 	s.mu.Unlock()
 }
 
-func (s *SerialOBD) Connected() bool {
+func (s *SerialOBD) IsConnected() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.connected
@@ -108,10 +108,10 @@ func (s *SerialOBD) GetOilTemp() (float64, error) {
 	return 0.0, nil // Placeholder return
 }
 
-func (s *SerialOBD) GetErrors() ([]DTCEntry, error) {
+func (s *SerialOBD) GetErrors() ([]obd.DTCEntry, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	copyErr := make([]DTCEntry, len(s.errors))
+	copyErr := make([]obd.DTCEntry, len(s.errors))
 	copy(copyErr, s.errors)
 	return copyErr, nil
 }
@@ -174,7 +174,7 @@ func (s *SerialOBD) tryConnect() error {
 	cfg := &serial.Config{
 		Name:        s.portName,
 		Baud:        s.baud,
-		ReadTimeout: 2 * time.Second, // Increased timeout
+		ReadTimeout: 1 * time.Second, // Increased timeout
 		Size:        8,
 		Parity:      serial.ParityNone,
 		StopBits:    serial.Stop1,
@@ -188,60 +188,25 @@ func (s *SerialOBD) tryConnect() error {
 	s.port = p
 	s.mu.Unlock()
 	fmt.Printf("[Serial] Port opened successfully, initializing ELM327\n")
-	// Initialize ELM327: send reset-like commands
-	// Reset and wait for device to stabilize
-	s.sendCommand("ATZ")
-	time.Sleep(1 * time.Second)
 
-	// Try to clear any garbage data
-	reader := bufio.NewReader(s.port)
-	for reader.Buffered() > 0 {
-		_, _ = reader.ReadByte()
-	}
-
-	// Configure ELM327 settings
-	s.sendCommand("ATD") // Set all to defaults
-	time.Sleep(100 * time.Millisecond)
-	s.sendCommand("ATL0") // Line feeds off
-	time.Sleep(100 * time.Millisecond)
-	s.sendCommand("ATE0") // Echo off
-	time.Sleep(100 * time.Millisecond)
-	s.sendCommand("ATH0") // Headers off
-	time.Sleep(100 * time.Millisecond)
-	s.sendCommand("ATS0") // Spaces off
-	time.Sleep(100 * time.Millisecond)
-
-	// Try auto protocol first
-	s.sendCommand("ATSP0") // Auto protocol detection
-	time.Sleep(200 * time.Millisecond)
-
-	// Set timeout and try reading any response
-	line, _ := readELMResponse(reader, 1*time.Second)
-	fmt.Printf("[Serial] Protocol init response: %q\n", line)
-
-	// Try each protocol explicitly if auto fails
-	protocols := []string{"ATSP1", "ATSP2", "ATSP3", "ATSP4", "ATSP5", "ATSP6"}
-	for _, proto := range protocols {
-		s.sendCommand(proto)
-		time.Sleep(200 * time.Millisecond)
-		// Try a simple command to test protocol
-		s.sendCommand("0100")
-		time.Sleep(300 * time.Millisecond)
-		line, _ := readELMResponse(reader, 1*time.Second)
-		if strings.Contains(line, "41") { // Valid response starts with 41
-			fmt.Printf("[Serial] Found working protocol with %s\n", proto)
-			break
-		}
-		fmt.Printf("[Serial] Protocol %s response: %q\n", proto, line)
-	}
-
+	s.initELM327()
 	fmt.Printf("[Serial] ELM327 initialization completed\n")
+
 	return nil
+}
+
+func (s *SerialOBD) initELM327() {
+	s.sendCommand("ATZ")   // Reset
+	s.sendCommand("ATE0")  // Echo off
+	s.sendCommand("ATL0")  // Line feeds off
+	s.sendCommand("ATH1")  // Headers off
+	s.sendCommand("ATS0")  // Spaces off
+	s.sendCommand("ATSP0") // Set protocol to automatic
 }
 
 func (s *SerialOBD) sendCommand(cmd string) {
 	if s.port == nil {
-		fmt.Printf("[Serial] Cannot send command: port is nil\n")
+		log.Error("cannot send command: port is nil")
 		return
 	}
 	full := cmd + "\r"
@@ -251,6 +216,8 @@ func (s *SerialOBD) sendCommand(cmd string) {
 		return
 	}
 	fmt.Printf("[Serial] Successfully wrote %d bytes for command %q\n", n, cmd)
+
+	time.Sleep(100 * time.Millisecond)
 }
 
 func (s *SerialOBD) setConnected(v bool) {
@@ -314,7 +281,7 @@ func parseELMResponseTemp(line string) (float64, bool) {
 // ELM/OBD responses typically include tokens like: "43 01 33 00 00" where each DTC is two bytes.
 // Each DTC is encoded per SAE J2012: first byte high 2 bits select the letter (P/C/B/U),
 // remaining nibbles form the 4-digit code.
-func parseELMResponseDTCs(line string) ([]DTCEntry, bool) {
+func parseELMResponseDTCs(line string) ([]obd.DTCEntry, bool) {
 	line = strings.TrimSpace(line)
 	if line == "" {
 		fmt.Printf("[DTC Parser] Empty response line\n")
@@ -326,7 +293,7 @@ func parseELMResponseDTCs(line string) ([]DTCEntry, bool) {
 	}
 	parts := strings.Fields(line)
 	fmt.Printf("[DTC Parser] Processing response tokens: %v\n", parts)
-	var results []DTCEntry
+	var results []obd.DTCEntry
 	letters := []byte{'P', 'C', 'B', 'U'}
 
 	// find all occurrences of 43 (response to mode 03)
@@ -354,7 +321,7 @@ func parseELMResponseDTCs(line string) ([]DTCEntry, bool) {
 				third := (b & 0xF0) >> 4
 				fourth := b & 0x0F
 				code := fmt.Sprintf("%c%X%X%X%X", letters[letterIndex], first, second, third, fourth)
-				results = append(results, DTCEntry{Code: code, Description: ""})
+				results = append(results, obd.DTCEntry{Code: code, Description: ""})
 			}
 		}
 	}

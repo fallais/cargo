@@ -163,7 +163,7 @@ func (d *Displayer) updateValues() {
 
 	if d.statusText != nil {
 		status := "[red]disconnected[white]"
-		if d.provider.Connected() {
+		if d.provider.IsConnected() {
 			status = "[green]connected[white]"
 		}
 		d.statusText.SetText(fmt.Sprintf("Status: %s", status))

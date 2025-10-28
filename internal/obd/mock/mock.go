@@ -1,6 +1,7 @@
-package obd
+package mock
 
 import (
+	"cargo/internal/obd"
 	"context"
 	"fmt"
 	"math/rand"
@@ -15,16 +16,16 @@ type MockOBD struct {
 	// simulated values
 	rpm          int
 	coolant      float64
-	errors       []DTCEntry
+	errors       []obd.DTCEntry
 	updateTicker *time.Ticker
 	stopCh       chan struct{}
 }
 
-func NewMockOBD() *MockOBD {
+func New() obd.OBDProvider {
 	m := &MockOBD{
 		rpm:     800,
 		coolant: 75.0,
-		errors:  []DTCEntry{},
+		errors:  []obd.DTCEntry{},
 		stopCh:  make(chan struct{}),
 	}
 	return m
@@ -60,7 +61,7 @@ func (m *MockOBD) Start(ctx context.Context) error {
 				}
 				// randomly add/remove an error
 				if rand.Float32() < 0.05 {
-					m.errors = append(m.errors, DTCEntry{Code: fmt.Sprintf("P%04d", rand.Intn(9999)), Description: "Random simulated fault"})
+					m.errors = append(m.errors, obd.DTCEntry{Code: fmt.Sprintf("P%04d", rand.Intn(9999)), Description: "Random simulated fault"})
 				}
 				if len(m.errors) > 0 && rand.Float32() < 0.02 {
 					m.errors = m.errors[1:]
@@ -111,16 +112,16 @@ func (m *MockOBD) GetOilTemp() (float64, error) {
 	return 0.0, nil // Placeholder return
 }
 
-func (m *MockOBD) GetErrors() ([]DTCEntry, error) {
+func (m *MockOBD) GetErrors() ([]obd.DTCEntry, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	copyErr := make([]DTCEntry, len(m.errors))
+	copyErr := make([]obd.DTCEntry, len(m.errors))
 	copy(copyErr, m.errors)
 	return copyErr, nil
 }
 
-// Connected for MockOBD always returns true while running.
-func (m *MockOBD) Connected() bool {
+// IsConnected for MockOBD always returns true while running.
+func (m *MockOBD) IsConnected() bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.running

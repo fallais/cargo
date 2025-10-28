@@ -8,21 +8,27 @@ import (
 
 	"cargo/internal/displayer"
 	"cargo/internal/obd"
+	"cargo/internal/obd/mock"
+	"cargo/internal/obd/serial"
+	"cargo/pkg/log"
 )
 
 func main() {
 	// CLI flags
 	useMock := flag.Bool("mock", false, "use mock OBD provider")
 	noTUI := flag.Bool("no-tui", false, "run without TUI (for testing)")
+	debug := flag.Bool("debug", false, "debug mode")
 	flag.Parse()
+
+	log.InitLogger(*debug)
 
 	// Choose provider based on flag
 	var provider obd.OBDProvider
 	if *useMock {
-		p := obd.NewMockOBD()
+		p := mock.New()
 		provider = p
 	} else {
-		provider = obd.NewSerialOBD()
+		provider = serial.New()
 	}
 
 	// Start provider
