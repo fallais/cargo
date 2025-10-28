@@ -32,10 +32,10 @@ type SerialOBD struct {
 }
 
 // NewSerialOBD creates a SerialOBD for the given device path (e.g., COM3 or /dev/ttyUSB0).
-func NewSerialOBD(portName string, baud int) *SerialOBD {
+func NewSerialOBD() *SerialOBD {
 	return &SerialOBD{
-		portName: portName,
-		baud:     baud,
+		portName: detectPlatformSerialDev(),
+		baud:     38400,
 		stopCh:   make(chan struct{}),
 		rpm:      0,
 		coolant:  0,
