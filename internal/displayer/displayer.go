@@ -51,7 +51,7 @@ func (d *Displayer) Run() error {
 
 	// header area: title, status, help
 	title := tview.NewTextView().SetTextAlign(tview.AlignCenter).SetText("car - k9n style CLI")
-	d.statusText = tview.NewTextView().SetTextAlign(tview.AlignCenter)
+	d.statusText = tview.NewTextView().SetTextAlign(tview.AlignCenter).SetDynamicColors(true)
 	d.helpText = tview.NewTextView().SetTextAlign(tview.AlignCenter).SetText("Keys: 1 Dashboard  2 DTC  q Quit")
 
 	headerFlex := tview.NewFlex().SetDirection(tview.FlexRow)
@@ -59,15 +59,19 @@ func (d *Displayer) Run() error {
 	headerFlex.AddItem(d.statusText, 1, 0, false)
 	headerFlex.AddItem(d.helpText, 1, 0, false)
 
-	flex := tview.NewFlex().SetDirection(tview.FlexRow)
-	flex.AddItem(headerFlex, 3, 0, false)
-	flex.AddItem(dashboard, 0, 1, true)
+	// Create main layout with header always visible
+	mainFlex := tview.NewFlex().SetDirection(tview.FlexRow)
+	mainFlex.AddItem(headerFlex, 3, 0, false)
 
+	// Add pages to tabs
 	d.dtcTable = dtc
-	d.tabs.AddPage("dashboard", flex, true, true)
+	d.tabs.AddPage("dashboard", dashboard, true, true)
 	d.tabs.AddPage("dtc", dtc, true, false)
 
-	d.app.SetRoot(d.tabs, true)
+	// Add tabs to main layout
+	mainFlex.AddItem(d.tabs, 0, 1, true)
+
+	d.app.SetRoot(mainFlex, true)
 	d.app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		switch event.Rune() {
 		case 'q', 'Q':
@@ -89,13 +93,13 @@ func (d *Displayer) Run() error {
 		if d.rpmText != nil && d.coolantText != nil {
 			rpm, _ := d.provider.GetRPM()
 			cool, _ := d.provider.GetCoolantTemp()
-			d.rpmText.SetText(fmt.Sprintf("[yellow]RPM:[white] %d", rpm))
-			d.coolantText.SetText(fmt.Sprintf("[yellow]Coolant (C):[white] %.1f", cool))
+			d.rpmText.SetText(fmt.Sprintf("RPM: %d", rpm))
+			d.coolantText.SetText(fmt.Sprintf("Coolant (C): %.1f", cool))
 		}
 		if d.statusText != nil {
-			status := "disconnected"
+			status := "[red]disconnected[white]"
 			if d.provider.Connected() {
-				status = "connected"
+				status = "[green]connected[white]"
 			}
 			d.statusText.SetText(fmt.Sprintf("Status: %s", status))
 		}
