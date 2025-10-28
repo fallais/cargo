@@ -197,3 +197,20 @@ func (d *Displayer) refreshLoop() {
 		}
 	}
 }
+
+// PrintErrorCodes prints the list of error codes directly (no TUI)
+func (d *Displayer) PrintErrorCodes() error {
+	errs, err := d.provider.GetErrors()
+	if err != nil {
+		return err
+	}
+	if len(errs) == 0 {
+		fmt.Println("No error codes found.")
+		return nil
+	}
+	fmt.Println("Error Codes:")
+	for _, e := range errs {
+		fmt.Printf("%s: %s\n", e.Code, e.Description)
+	}
+	return nil
+}
