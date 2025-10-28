@@ -96,6 +96,18 @@ func (s *SerialOBD) GetCoolantTemp() (float64, error) {
 	return s.coolant, nil
 }
 
+func (s *SerialOBD) GetTotalKilometers() (int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return 0, nil // Placeholder return
+}
+
+func (s *SerialOBD) GetOilTemp() (float64, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return 0.0, nil // Placeholder return
+}
+
 func (s *SerialOBD) GetErrors() ([]DTCEntry, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

@@ -20,12 +20,15 @@ type Displayer struct {
 	ctx      context.Context
 	cancel   context.CancelFunc
 	mu       sync.Mutex
+
 	// UI elements cached for updates
-	rpmText     *tview.TextView
-	coolantText *tview.TextView
-	statusText  *tview.TextView
-	helpText    *tview.TextView
-	dtcTable    *tview.Table
+	rpmText             *tview.TextView
+	coolantText         *tview.TextView
+	statusText          *tview.TextView
+	totalKilometersText *tview.TextView
+	oilTempText         *tview.TextView
+	helpText            *tview.TextView
+	dtcTable            *tview.Table
 }
 
 func New(provider obd.OBDProvider) *Displayer {
@@ -50,7 +53,7 @@ func (d *Displayer) Run() error {
 	dtc := d.buildDTC()
 
 	// header area: title, status, help
-	title := tview.NewTextView().SetTextAlign(tview.AlignCenter).SetText("car - k9n style CLI")
+	title := tview.NewTextView().SetTextAlign(tview.AlignCenter).SetText("cargo - command-line OBD2 tool")
 	d.statusText = tview.NewTextView().SetTextAlign(tview.AlignCenter).SetDynamicColors(true)
 	d.helpText = tview.NewTextView().SetTextAlign(tview.AlignCenter).SetText("Keys: 1 Dashboard  2 DTC  q Quit")
 
@@ -87,22 +90,13 @@ func (d *Displayer) Run() error {
 		return event
 	})
 
+	// updateValues updates the displayed values.
+	d.updateValues()
+
 	// central BeforeDraw to update UI elements
 	d.app.SetBeforeDrawFunc(func(screen tcell.Screen) bool {
 		// update values
-		if d.rpmText != nil && d.coolantText != nil {
-			rpm, _ := d.provider.GetRPM()
-			cool, _ := d.provider.GetCoolantTemp()
-			d.rpmText.SetText(fmt.Sprintf("RPM: %d", rpm))
-			d.coolantText.SetText(fmt.Sprintf("Coolant (C): %.1f", cool))
-		}
-		if d.statusText != nil {
-			status := "[red]disconnected[white]"
-			if d.provider.Connected() {
-				status = "[green]connected[white]"
-			}
-			d.statusText.SetText(fmt.Sprintf("Status: %s", status))
-		}
+		d.updateValues()
 		return false
 	})
 
@@ -128,14 +122,20 @@ func (d *Displayer) showPage(name string) {
 func (d *Displayer) buildDashboard() *tview.Flex {
 	rpmText := tview.NewTextView().SetDynamicColors(true)
 	coolantText := tview.NewTextView().SetDynamicColors(true)
+	totalKilometersText := tview.NewTextView().SetDynamicColors(true)
+	oilTempText := tview.NewTextView().SetDynamicColors(true)
 
 	infoFlex := tview.NewFlex().SetDirection(tview.FlexRow)
-	infoFlex.AddItem(rpmText, 3, 0, false)
-	infoFlex.AddItem(coolantText, 3, 0, false)
+	infoFlex.AddItem(rpmText, 1, 0, false)
+	infoFlex.AddItem(coolantText, 1, 0, false)
+	infoFlex.AddItem(totalKilometersText, 1, 0, false)
+	infoFlex.AddItem(oilTempText, 1, 0, false)
 
 	// cache pointers for centralized updates
 	d.rpmText = rpmText
 	d.coolantText = coolantText
+	d.totalKilometersText = totalKilometersText
+	d.oilTempText = oilTempText
 
 	return infoFlex
 }
@@ -147,6 +147,28 @@ func (d *Displayer) buildDTC() *tview.Table {
 
 	// update in refresh loop; provide a method to redraw
 	return tbl
+}
+
+func (d *Displayer) updateValues() {
+	rpm, _ := d.provider.GetRPM()
+	cool, _ := d.provider.GetCoolantTemp()
+	totalKilometers, _ := d.provider.GetTotalKilometers()
+	oilTemp, _ := d.provider.GetOilTemp()
+
+	d.rpmText.SetText(fmt.Sprintf("RPM: %d", rpm))
+	d.coolantText.SetText(fmt.Sprintf("Coolant (C): %.1f", cool))
+	d.totalKilometersText.SetText(fmt.Sprintf("Total Kilometers: %d", totalKilometers))
+	d.oilTempText.SetText(fmt.Sprintf("Oil Temp (C): %.1f", oilTemp))
+
+	d.helpText.SetText("Keys: 1 Dashboard  2 DTC  q Quit")
+
+	if d.statusText != nil {
+		status := "[red]disconnected[white]"
+		if d.provider.Connected() {
+			status = "[green]connected[white]"
+		}
+		d.statusText.SetText(fmt.Sprintf("Status: %s", status))
+	}
 }
 
 func (d *Displayer) refreshLoop() {
