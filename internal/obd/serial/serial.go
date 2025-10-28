@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/tarm/serial"
+	"go.uber.org/zap"
 )
 
 var CommonBaudRates = []int{9600, 38400, 115200}
@@ -184,13 +185,15 @@ func (s *SerialOBD) tryConnect() error {
 		fmt.Printf("[Serial] Failed to open port: %v\n", err)
 		return err
 	}
+	time.Sleep(2 * time.Second) // wait for port to stabilize
 	s.mu.Lock()
 	s.port = p
 	s.mu.Unlock()
 	fmt.Printf("[Serial] Port opened successfully, initializing ELM327\n")
 
+	log.Info("Initializing ELM327 device over serial", zap.String("port", s.portName), zap.Int("baud", s.baud))
 	s.initELM327()
-	fmt.Printf("[Serial] ELM327 initialization completed\n")
+	log.Info("ELM327 initialization completed")
 
 	return nil
 }
