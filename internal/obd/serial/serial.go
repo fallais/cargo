@@ -2,6 +2,7 @@ package serial
 
 import (
 	"bufio"
+	"cargo/internal/models"
 	"cargo/internal/obd"
 	"cargo/pkg/log"
 	"context"
@@ -27,7 +28,7 @@ type SerialOBD struct {
 	running   bool
 	rpm       int
 	coolant   float64
-	errors    []obd.DTCEntry
+	errors    []models.DTCEntry
 	stopCh    chan struct{}
 	connected bool
 }
@@ -53,8 +54,16 @@ func (s *SerialOBD) Start(ctx context.Context) error {
 	s.running = true
 	s.mu.Unlock()
 
-	// spawn reconnect/poll goroutine
+	// Connect
+	err := s.tryConnect()
+	if err != nil {
+		return fmt.Errorf("error while connecting: %v", err)
+	}
+	s.setConnected(true)
+
+	// Start main loop
 	go s.run(ctx)
+
 	return nil
 }
 
@@ -109,63 +118,36 @@ func (s *SerialOBD) GetOilTemp() (float64, error) {
 	return 0.0, nil // Placeholder return
 }
 
-func (s *SerialOBD) GetErrors() ([]obd.DTCEntry, error) {
+func (s *SerialOBD) GetErrors() ([]models.DTCEntry, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	copyErr := make([]obd.DTCEntry, len(s.errors))
+	copyErr := make([]models.DTCEntry, len(s.errors))
 	copy(copyErr, s.errors)
 	return copyErr, nil
 }
 
 func (s *SerialOBD) run(ctx context.Context) {
-	// reconnect/backoff loop
-	backoff := time.Second
+
+	reader := bufio.NewReader(s.port)
+	// run a first immediate read of values before entering the periodic ticker
+	s.updateRPM(reader)
+	s.updateCoolant(reader)
+	s.updateDTCs(reader)
+
+	pollTicker := time.NewTicker(5 * time.Second)
 	for {
 		select {
 		case <-ctx.Done():
+			pollTicker.Stop()
 			return
 		case <-s.stopCh:
+			pollTicker.Stop()
 			return
-		default:
-			// try connect
-			if err := s.tryConnect(); err != nil {
-				// mark disconnected
-				s.setConnected(false)
-				// wait and backoff
-				time.Sleep(backoff)
-				backoff *= 2
-				if backoff > 30*time.Second {
-					backoff = 30 * time.Second
-				}
-				continue
-			}
-			// connected
-			backoff = time.Second
-			s.setConnected(true)
-			// polling loop while connected
-			reader := bufio.NewReader(s.port)
-			// run a first immediate read of values before entering the periodic ticker
+		case <-pollTicker.C:
+			// update values (RPM, coolant, DTCs)
 			s.updateRPM(reader)
 			s.updateCoolant(reader)
 			s.updateDTCs(reader)
-			pollTicker := time.NewTicker(5 * time.Second)
-			for {
-				select {
-				case <-ctx.Done():
-					pollTicker.Stop()
-					return
-				case <-s.stopCh:
-					pollTicker.Stop()
-					return
-				case <-pollTicker.C:
-					// update values (RPM, coolant, DTCs)
-					s.updateRPM(reader)
-					s.updateCoolant(reader)
-					s.updateDTCs(reader)
-
-				}
-				// loop returns here on disconnect and we try reconnect
-			}
 		}
 	}
 }
@@ -175,7 +157,7 @@ func (s *SerialOBD) tryConnect() error {
 	cfg := &serial.Config{
 		Name:        s.portName,
 		Baud:        s.baud,
-		ReadTimeout: 1 * time.Second, // Increased timeout
+		ReadTimeout: 1 * time.Second,
 		Size:        8,
 		Parity:      serial.ParityNone,
 		StopBits:    serial.Stop1,
@@ -185,11 +167,13 @@ func (s *SerialOBD) tryConnect() error {
 		fmt.Printf("[Serial] Failed to open port: %v\n", err)
 		return err
 	}
-	time.Sleep(2 * time.Second) // wait for port to stabilize
+	// wait for port to stabilize
+	time.Sleep(2 * time.Second)
+
 	s.mu.Lock()
 	s.port = p
 	s.mu.Unlock()
-	fmt.Printf("[Serial] Port opened successfully, initializing ELM327\n")
+	log.Info("[Serial] Port opened successfully")
 
 	log.Info("Initializing ELM327 device over serial", zap.String("port", s.portName), zap.Int("baud", s.baud))
 	s.initELM327()
@@ -284,7 +268,7 @@ func parseELMResponseTemp(line string) (float64, bool) {
 // ELM/OBD responses typically include tokens like: "43 01 33 00 00" where each DTC is two bytes.
 // Each DTC is encoded per SAE J2012: first byte high 2 bits select the letter (P/C/B/U),
 // remaining nibbles form the 4-digit code.
-func parseELMResponseDTCs(line string) ([]obd.DTCEntry, bool) {
+func parseELMResponseDTCs(line string) ([]models.DTCEntry, bool) {
 	line = strings.TrimSpace(line)
 	if line == "" {
 		fmt.Printf("[DTC Parser] Empty response line\n")
@@ -296,7 +280,7 @@ func parseELMResponseDTCs(line string) ([]obd.DTCEntry, bool) {
 	}
 	parts := strings.Fields(line)
 	fmt.Printf("[DTC Parser] Processing response tokens: %v\n", parts)
-	var results []obd.DTCEntry
+	var results []models.DTCEntry
 	letters := []byte{'P', 'C', 'B', 'U'}
 
 	// find all occurrences of 43 (response to mode 03)
@@ -324,7 +308,7 @@ func parseELMResponseDTCs(line string) ([]obd.DTCEntry, bool) {
 				third := (b & 0xF0) >> 4
 				fourth := b & 0x0F
 				code := fmt.Sprintf("%c%X%X%X%X", letters[letterIndex], first, second, third, fourth)
-				results = append(results, obd.DTCEntry{Code: code, Description: ""})
+				results = append(results, models.DTCEntry{Code: code, Description: ""})
 			}
 		}
 	}

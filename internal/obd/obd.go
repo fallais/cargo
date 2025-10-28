@@ -1,6 +1,7 @@
 package obd
 
 import (
+	"cargo/internal/models"
 	"context"
 )
 
@@ -13,11 +14,5 @@ type OBDProvider interface {
 	GetCoolantTemp() (float64, error)
 	GetTotalKilometers() (int, error)
 	GetOilTemp() (float64, error)
-	GetErrors() ([]DTCEntry, error)
-}
-
-// DTCEntry represents a diagnostic trouble code with description.
-type DTCEntry struct {
-	Code        string
-	Description string
+	GetErrors() ([]models.DTCEntry, error)
 }
