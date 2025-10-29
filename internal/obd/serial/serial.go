@@ -2,9 +2,6 @@ package serial
 
 import (
 	"bufio"
-	"cargo/internal/models"
-	"cargo/internal/obd"
-	"cargo/pkg/log"
 	"context"
 	"errors"
 	"fmt"
@@ -12,6 +9,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"cargo/internal/models"
+	"cargo/internal/obd"
+	"cargo/pkg/log"
 
 	"github.com/tarm/serial"
 	"go.uber.org/zap"
@@ -34,10 +35,10 @@ type SerialOBD struct {
 }
 
 // NewSerialOBD creates a SerialOBD.
-func New() obd.OBDProvider {
+func New(baud int) obd.OBDProvider {
 	return &SerialOBD{
 		portName: detectPlatformSerialDev(),
-		baud:     38400,
+		baud:     baud,
 		stopCh:   make(chan struct{}),
 		rpm:      0,
 		coolant:  0,
@@ -191,20 +192,21 @@ func (s *SerialOBD) initELM327() {
 	s.sendCommand("ATSP0") // Set protocol to automatic
 }
 
-func (s *SerialOBD) sendCommand(cmd string) {
+func (s *SerialOBD) sendCommand(cmd string) error {
 	if s.port == nil {
-		log.Error("cannot send command: port is nil")
-		return
+		return fmt.Errorf("cannot send command: port is nil")
 	}
+
 	full := cmd + "\r"
+
 	n, err := s.port.Write([]byte(full))
 	if err != nil {
-		fmt.Printf("[Serial] Error writing command %q: %v\n", cmd, err)
-		return
+		return fmt.Errorf("[Serial] Error writing command %q: %v", cmd, err)
 	}
 	fmt.Printf("[Serial] Successfully wrote %d bytes for command %q\n", n, cmd)
 
 	time.Sleep(100 * time.Millisecond)
+	return nil
 }
 
 func (s *SerialOBD) setConnected(v bool) {

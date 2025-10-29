@@ -145,6 +145,12 @@ func (d *Displayer) buildDTC() *tview.Table {
 	tbl.SetCell(0, 0, tview.NewTableCell("Code").SetSelectable(false).SetAlign(tview.AlignCenter))
 	tbl.SetCell(0, 1, tview.NewTableCell("Description").SetSelectable(false).SetAlign(tview.AlignCenter))
 
+	errs, _ := d.provider.GetErrors()
+	for i, e := range errs {
+		tbl.SetCell(i+1, 0, tview.NewTableCell(e.Code))
+		tbl.SetCell(i+1, 1, tview.NewTableCell(e.Description))
+	}
+
 	return tbl
 }
 
@@ -171,7 +177,7 @@ func (d *Displayer) updateValues() {
 }
 
 func (d *Displayer) refreshLoop() {
-	ticker := time.NewTicker(1 * time.Second)
+	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	for {
 		select {
@@ -196,21 +202,4 @@ func (d *Displayer) refreshLoop() {
 			}
 		}
 	}
-}
-
-// PrintErrorCodes prints the list of error codes directly (no TUI)
-func (d *Displayer) PrintErrorCodes() error {
-	errs, err := d.provider.GetErrors()
-	if err != nil {
-		return err
-	}
-	if len(errs) == 0 {
-		fmt.Println("No error codes found.")
-		return nil
-	}
-	fmt.Println("Error Codes:")
-	for _, e := range errs {
-		fmt.Printf("%s: %s\n", e.Code, e.Description)
-	}
-	return nil
 }
