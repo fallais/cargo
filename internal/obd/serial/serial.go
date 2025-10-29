@@ -20,20 +20,28 @@ import (
 
 const DefaultDelay = 100 * time.Millisecond
 
-var CommonBaudRates = []int{9600, 38400, 115200}
+const (
+	CommandReset           = "ATZ"
+	CommandEchoOff         = "ATE0"
+	CommandLineFeedsOff    = "ATL0"
+	CommandHeadersOff      = "ATH1"
+	CommandSpacesOff       = "ATS0"
+	CommandSetProtocolAuto = "ATSP0"
+
+	CR = "\r"
+)
 
 // SerialOBD implements OBDProvider backed by a serial (ELM327-like) device.
 type SerialOBD struct {
-	mu       sync.RWMutex
 	portName string
 	baud     int
 	port     io.ReadWriteCloser
-	rpm      int
-	coolant  float64
 	errors   []models.DTCEntry
 	stopCh   chan struct{}
 
 	isConnected bool
+
+	mu sync.RWMutex
 }
 
 // NewSerialOBD creates a SerialOBD.
@@ -42,8 +50,6 @@ func New(baud int) obd.OBDProvider {
 		portName: detectPlatformSerialDev(),
 		baud:     baud,
 		stopCh:   make(chan struct{}),
-		rpm:      0,
-		coolant:  0,
 		errors:   nil,
 	}
 }
@@ -76,27 +82,46 @@ func (s *SerialOBD) IsConnected() bool {
 }
 
 func (s *SerialOBD) GetRPM() (int, error) {
-	s.sendCommand("010C")
+	if err := s.sendCommand(obd.PIDEngineRPM.String()); err != nil {
+		return 0, fmt.Errorf("failed to send RPM command: %v", err)
+	}
 	time.Sleep(DefaultDelay)
 
-	// read multi-line response until '>' prompt or timeout
-	line, _ := readELMResponse(reader, 1200*time.Millisecond)
-	if parsed, ok := parseELMResponseRPM(line); ok {
-		s.mu.Lock()
-		s.rpm = parsed
-		s.mu.Unlock()
+	reader := bufio.NewReader(s.port)
+	line, err := readELMResponse(reader, 1200*time.Millisecond)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read RPM response: %v", err)
 	}
 
-	return s.rpm, nil
+	if rpm, ok := parseELMResponseRPM(line); ok {
+		return rpm, nil
+	}
+	return 0, fmt.Errorf("failed to parse RPM response")
 }
 
 func (s *SerialOBD) GetCoolantTemp() (float64, error) {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
 	if !s.isConnected {
+		s.mu.RUnlock()
 		return 0, errors.New("not connected")
 	}
-	return s.coolant, nil
+	s.mu.RUnlock()
+
+	if err := s.sendCommand(obd.PIDCoolantTemp.String()); err != nil {
+		return 0, fmt.Errorf("failed to send coolant temp command: %v", err)
+	}
+	time.Sleep(DefaultDelay)
+
+	reader := bufio.NewReader(s.port)
+	line, err := readELMResponse(reader, 1200*time.Millisecond)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read coolant temp response: %v", err)
+	}
+
+	if temp, ok := parseELMResponseTemp(line); ok {
+		return temp, nil
+	}
+	return 0, fmt.Errorf("failed to parse coolant temp response")
 }
 
 func (s *SerialOBD) GetTotalKilometers() (int, error) {
@@ -136,6 +161,7 @@ func (s *SerialOBD) open() error {
 		fmt.Printf("[Serial] Failed to open port: %v\n", err)
 		return err
 	}
+
 	// wait for port to stabilize
 	time.Sleep(2 * time.Second)
 
@@ -152,12 +178,12 @@ func (s *SerialOBD) open() error {
 }
 
 func (s *SerialOBD) initELM327() {
-	s.sendCommand("ATZ")   // Reset
-	s.sendCommand("ATE0")  // Echo off
-	s.sendCommand("ATL0")  // Line feeds off
-	s.sendCommand("ATH1")  // Headers off
-	s.sendCommand("ATS0")  // Spaces off
-	s.sendCommand("ATSP0") // Set protocol to automatic
+	s.sendCommand(CommandReset)           // Reset
+	s.sendCommand(CommandEchoOff)         // Echo off
+	s.sendCommand(CommandLineFeedsOff)    // Line feeds off
+	s.sendCommand(CommandHeadersOff)      // Headers off
+	s.sendCommand(CommandSpacesOff)       // Spaces off
+	s.sendCommand(CommandSetProtocolAuto) // Set protocol to automatic
 }
 
 func (s *SerialOBD) sendCommand(cmd string) error {
@@ -165,7 +191,7 @@ func (s *SerialOBD) sendCommand(cmd string) error {
 		return fmt.Errorf("cannot send command: port is nil")
 	}
 
-	full := cmd + "\r"
+	full := cmd + CR
 
 	n, err := s.port.Write([]byte(full))
 	if err != nil {
@@ -286,32 +312,6 @@ func parseELMResponseDTCs(line string) ([]models.DTCEntry, bool) {
 		return nil, false
 	}
 	return results, true
-}
-
-// updateRPM sends the RPM PID and updates the internal rpm field if parse succeeds.
-func (s *SerialOBD) updateRPM(reader *bufio.Reader) {
-	s.sendCommand("010C")
-	time.Sleep(50 * time.Millisecond)
-	// read multi-line response until '>' prompt or timeout
-	line, _ := readELMResponse(reader, 1200*time.Millisecond)
-	if parsed, ok := parseELMResponseRPM(line); ok {
-		s.mu.Lock()
-		s.rpm = parsed
-		s.mu.Unlock()
-	}
-}
-
-// updateCoolant sends the coolant PID and updates the internal coolant field if parse succeeds.
-func (s *SerialOBD) updateCoolant(reader *bufio.Reader) {
-	s.sendCommand("0105")
-	time.Sleep(50 * time.Millisecond)
-	// read multi-line response until '>' prompt or timeout
-	line, _ := readELMResponse(reader, 1200*time.Millisecond)
-	if parsed, ok := parseELMResponseTemp(line); ok {
-		s.mu.Lock()
-		s.coolant = parsed
-		s.mu.Unlock()
-	}
 }
 
 // updateDTCs queries stored trouble codes (mode 03) and updates the internal errors slice.

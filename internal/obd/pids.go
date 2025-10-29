@@ -1,15 +1,22 @@
 package obd
 
-var pidDescriptions = map[string]string{
-	"0100": "PIDs supported [01-20]",
-	"0101": "Monitor status since DTCs cleared",
-	"0105": "Engine coolant temperature",
-	"010C": "Engine RPM",
-	"010D": "Vehicle speed",
-	"010F": "Intake air temperature",
-	"0110": "MAF air flow rate",
-	"0120": "PIDs supported [21-40]",
-	"0133": "Absolute barometric pressure",
-	"0142": "Control module voltage",
-	"0173": "Distance traveled since codes cleared",
+import "fmt"
+
+type PID struct {
+	Mode string
+	Code string
+	Desc string
+}
+
+var (
+	PIDCoolantTemp     = PID{Mode: "01", Code: "05", Desc: "Engine Coolant Temperature"}
+	PIDEngineRPM       = PID{Mode: "01", Code: "0C", Desc: "Engine RPM"}
+	PIDVehicleSpeed    = PID{Mode: "01", Code: "0D", Desc: "Vehicle Speed"}
+	PIDOilTemp         = PID{Mode: "01", Code: "5C", Desc: "Engine Oil Temperature"}
+	PIDTotalKilometers = PID{Mode: "01", Code: "31", Desc: "Distance traveled since codes cleared"}
+	PIDDTCCount        = PID{Mode: "03", Code: "00", Desc: "Number of stored DTCs"}
+)
+
+func (p PID) String() string {
+	return fmt.Sprintf("%s%s", p.Mode, p.Code)
 }
