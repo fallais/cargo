@@ -18,20 +18,22 @@ import (
 	"go.uber.org/zap"
 )
 
+const DefaultDelay = 100 * time.Millisecond
+
 var CommonBaudRates = []int{9600, 38400, 115200}
 
 // SerialOBD implements OBDProvider backed by a serial (ELM327-like) device.
 type SerialOBD struct {
-	mu        sync.RWMutex
-	portName  string
-	baud      int
-	port      io.ReadWriteCloser
-	running   bool
-	rpm       int
-	coolant   float64
-	errors    []models.DTCEntry
-	stopCh    chan struct{}
-	connected bool
+	mu       sync.RWMutex
+	portName string
+	baud     int
+	port     io.ReadWriteCloser
+	rpm      int
+	coolant  float64
+	errors   []models.DTCEntry
+	stopCh   chan struct{}
+
+	isConnected bool
 }
 
 // NewSerialOBD creates a SerialOBD.
@@ -47,61 +49,51 @@ func New(baud int) obd.OBDProvider {
 }
 
 func (s *SerialOBD) Start(ctx context.Context) error {
-	s.mu.Lock()
-	if s.running {
-		s.mu.Unlock()
-		return nil
-	}
-	s.running = true
-	s.mu.Unlock()
-
 	// Connect
-	err := s.tryConnect()
+	err := s.open()
 	if err != nil {
 		return fmt.Errorf("error while connecting: %v", err)
 	}
 	s.setConnected(true)
-
-	// Start main loop
-	go s.run(ctx)
 
 	return nil
 }
 
 func (s *SerialOBD) Stop() {
 	s.mu.Lock()
-	if !s.running {
-		s.mu.Unlock()
-		return
-	}
 	close(s.stopCh)
 	if s.port != nil {
 		s.port.Close()
 	}
-	s.running = false
-	s.connected = false
+	s.isConnected = false
 	s.mu.Unlock()
 }
 
 func (s *SerialOBD) IsConnected() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.connected
+	return s.isConnected
 }
 
 func (s *SerialOBD) GetRPM() (int, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if !s.connected {
-		return 0, errors.New("not connected")
+	s.sendCommand("010C")
+	time.Sleep(DefaultDelay)
+
+	// read multi-line response until '>' prompt or timeout
+	line, _ := readELMResponse(reader, 1200*time.Millisecond)
+	if parsed, ok := parseELMResponseRPM(line); ok {
+		s.mu.Lock()
+		s.rpm = parsed
+		s.mu.Unlock()
 	}
+
 	return s.rpm, nil
 }
 
 func (s *SerialOBD) GetCoolantTemp() (float64, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if !s.connected {
+	if !s.isConnected {
 		return 0, errors.New("not connected")
 	}
 	return s.coolant, nil
@@ -122,38 +114,14 @@ func (s *SerialOBD) GetOilTemp() (float64, error) {
 func (s *SerialOBD) GetErrors() ([]models.DTCEntry, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
 	copyErr := make([]models.DTCEntry, len(s.errors))
 	copy(copyErr, s.errors)
+
 	return copyErr, nil
 }
 
-func (s *SerialOBD) run(ctx context.Context) {
-
-	reader := bufio.NewReader(s.port)
-	// run a first immediate read of values before entering the periodic ticker
-	s.updateRPM(reader)
-	s.updateCoolant(reader)
-	s.updateDTCs(reader)
-
-	pollTicker := time.NewTicker(5 * time.Second)
-	for {
-		select {
-		case <-ctx.Done():
-			pollTicker.Stop()
-			return
-		case <-s.stopCh:
-			pollTicker.Stop()
-			return
-		case <-pollTicker.C:
-			// update values (RPM, coolant, DTCs)
-			s.updateRPM(reader)
-			s.updateCoolant(reader)
-			s.updateDTCs(reader)
-		}
-	}
-}
-
-func (s *SerialOBD) tryConnect() error {
+func (s *SerialOBD) open() error {
 	fmt.Printf("[Serial] Attempting to connect to port %s at %d baud\n", s.portName, s.baud)
 	cfg := &serial.Config{
 		Name:        s.portName,
@@ -212,7 +180,7 @@ func (s *SerialOBD) sendCommand(cmd string) error {
 func (s *SerialOBD) setConnected(v bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.connected = v
+	s.isConnected = v
 }
 
 // parseELMResponseRPM tries to parse a minimal ELM327 response for 010C (RPM).
