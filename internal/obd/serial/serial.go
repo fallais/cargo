@@ -36,7 +36,6 @@ type SerialOBD struct {
 	portName string
 	baud     int
 	port     io.ReadWriteCloser
-	errors   []models.DTCEntry
 	stopCh   chan struct{}
 
 	isConnected bool
@@ -50,7 +49,6 @@ func New(baud int) obd.OBDProvider {
 		portName: detectPlatformSerialDev(),
 		baud:     baud,
 		stopCh:   make(chan struct{}),
-		errors:   nil,
 	}
 }
 
@@ -137,13 +135,21 @@ func (s *SerialOBD) GetOilTemp() (float64, error) {
 }
 
 func (s *SerialOBD) GetErrors() ([]models.DTCEntry, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	fmt.Printf("[DTC] Sending Mode 03 command to query DTCs\n")
 
-	copyErr := make([]models.DTCEntry, len(s.errors))
-	copy(copyErr, s.errors)
+	reader := bufio.NewReader(s.port)
+	// Send command and wait longer for response
+	s.sendCommand("03")
+	time.Sleep(500 * time.Millisecond) // Increased delay to give more time for response
 
-	return copyErr, nil
+	// read multi-line response until '>' prompt or timeout
+	line, err := readELMResponse(reader, 10*time.Second) // Increased timeout further
+	fmt.Printf("[DTC] Raw response from ELM327: %q (err: %v)\n", line, err)
+	if parsedErrs, ok := parseELMResponseDTCs(line); ok {
+		return parsedErrs, nil
+	} else {
+		return nil, fmt.Errorf("[DTC] No trouble codes found or parsing failed")
+	}
 }
 
 func (s *SerialOBD) open() error {
@@ -177,13 +183,45 @@ func (s *SerialOBD) open() error {
 	return nil
 }
 
-func (s *SerialOBD) initELM327() {
-	s.sendCommand(CommandReset)           // Reset
-	s.sendCommand(CommandEchoOff)         // Echo off
-	s.sendCommand(CommandLineFeedsOff)    // Line feeds off
-	s.sendCommand(CommandHeadersOff)      // Headers off
-	s.sendCommand(CommandSpacesOff)       // Spaces off
-	s.sendCommand(CommandSetProtocolAuto) // Set protocol to automatic
+func (s *SerialOBD) initELM327() error {
+	// Create a new reader for initialization
+	reader := bufio.NewReader(s.port)
+
+	// Reset and wait for response
+	fmt.Printf("[ELM Init] Sending reset command...\n")
+	if err := s.sendCommand(CommandReset); err != nil {
+		return fmt.Errorf("reset failed: %v", err)
+	}
+
+	// Wait longer after reset and try multiple times to get a response
+	time.Sleep(2 * time.Second)
+
+	// Send each command and verify response
+	commands := []string{
+		CommandEchoOff,         // Echo off
+		CommandLineFeedsOff,    // Line feeds off
+		CommandHeadersOff,      // Headers off
+		CommandSpacesOff,       // Spaces off
+		CommandSetProtocolAuto, // Set protocol to automatic
+	}
+
+	for _, cmd := range commands {
+		fmt.Printf("[ELM Init] Sending command: %q\n", cmd)
+		if err := s.sendCommand(cmd); err != nil {
+			return fmt.Errorf("command %s failed: %v", cmd, err)
+		}
+
+		resp, err := readELMResponse(reader, 500*time.Millisecond)
+		fmt.Printf("[ELM Init] Command %q response attempt %d: %q (err: %v)\n", cmd, resp, err)
+		time.Sleep(100 * time.Millisecond)
+
+		// Even if we don't get "OK", if we got any response, consider it success
+		if resp == "" {
+			return fmt.Errorf("command %s got no response", cmd)
+		}
+	}
+
+	return nil
 }
 
 func (s *SerialOBD) sendCommand(cmd string) error {
@@ -312,32 +350,6 @@ func parseELMResponseDTCs(line string) ([]models.DTCEntry, bool) {
 		return nil, false
 	}
 	return results, true
-}
-
-// updateDTCs queries stored trouble codes (mode 03) and updates the internal errors slice.
-func (s *SerialOBD) updateDTCs(reader *bufio.Reader) {
-	fmt.Printf("[DTC] Sending Mode 03 command to query DTCs\n")
-
-	// Try to clear any stale data by reading what's available
-	for reader.Buffered() > 0 {
-		_, _ = reader.ReadByte()
-	}
-
-	// Send command and wait longer for response
-	s.sendCommand("03")
-	time.Sleep(500 * time.Millisecond) // Increased delay to give more time for response
-
-	// read multi-line response until '>' prompt or timeout
-	line, err := readELMResponse(reader, 3*time.Second) // Increased timeout further
-	fmt.Printf("[DTC] Raw response from ELM327: %q (err: %v)\n", line, err)
-	if parsedErrs, ok := parseELMResponseDTCs(line); ok {
-		s.mu.Lock()
-		s.errors = parsedErrs
-		fmt.Printf("[DTC] Successfully parsed %d trouble codes\n", len(parsedErrs))
-		s.mu.Unlock()
-	} else {
-		fmt.Printf("[DTC] No trouble codes found or parsing failed\n")
-	}
 }
 
 // readELMResponse collects bytes from the reader until the ELM327 prompt '>' is seen

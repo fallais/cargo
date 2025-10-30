@@ -4,7 +4,7 @@ import (
 	"cargo/internal/obd"
 	"context"
 	"fmt"
-	"sync"
+
 	"time"
 
 	"github.com/gdamore/tcell/v2"
@@ -19,7 +19,6 @@ type Displayer struct {
 	provider obd.OBDProvider
 	ctx      context.Context
 	cancel   context.CancelFunc
-	mu       sync.Mutex
 
 	// UI elements cached for updates
 	rpmText             *tview.TextView
@@ -44,11 +43,6 @@ func New(provider obd.OBDProvider) *Displayer {
 }
 
 func (d *Displayer) Run() error {
-	// start provider
-	if err := d.provider.Start(d.ctx); err != nil {
-		return err
-	}
-	// build UI
 	dashboard := d.buildDashboard()
 	dtc := d.buildDTC()
 
