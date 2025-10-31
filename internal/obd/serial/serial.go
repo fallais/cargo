@@ -321,13 +321,6 @@ func (s *SerialOBD) open() error {
 		return fmt.Errorf("failed to open port after %d attempts: %v", maxRetries, err)
 	}
 
-	// Try to flush any pending data
-	if flusher, ok := p.(interface{ Flush() error }); ok {
-		if err := flusher.Flush(); err != nil {
-			log.Warn("Failed to flush port", zap.Error(err))
-		}
-	}
-
 	// wait for port to stabilize - ELM327 needs more time
 	time.Sleep(5 * time.Second)
 
@@ -496,18 +489,6 @@ func parseELMResponseRPM(line string) (int, bool) {
 		}
 	}
 	return 0, false
-}
-
-func parseHexByte(s string) (byte, error) {
-	var v byte
-	_, err := fmt.Sscanf(s, "%02X", &v)
-	if err != nil {
-		_, err2 := fmt.Sscanf(s, "%02x", &v)
-		if err2 != nil {
-			return 0, err
-		}
-	}
-	return v, nil
 }
 
 // parseELMResponseTemp parses 0105 (coolant) response: 41 05 A => temp = A - 40
