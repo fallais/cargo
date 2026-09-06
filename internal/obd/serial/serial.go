@@ -51,9 +51,19 @@ func New(opts Options) *SerialOBD {
 	return &SerialOBD{opts: opts, modules: obd.AllModules()}
 }
 
+// connectTimeout bounds one attempt. Probing every candidate device at every
+// baud rate has to finish well inside the reconnect interval, or attempts pile
+// up on each other.
+const connectTimeout = 20 * time.Second
+
 // Start makes one connection attempt and then keeps trying in the background.
 //
-// The returned error reports only that first attempt. A caller that needs a
+// ctx must last for the whole session, not just for startup. It is what stops
+// the supervisor, so a context that expires takes reconnection with it: an
+// adapter plugged in afterwards would never be noticed. Each attempt gets its
+// own bounded child instead.
+//
+// The returned error reports only the first attempt. A caller that needs a
 // vehicle right now - the one-shot report - should treat it as fatal, but the
 // UI should not: an adapter that is not plugged in yet is the normal way a
 // session starts, and the supervisor turns that into a status line rather than
@@ -65,9 +75,16 @@ func (s *SerialOBD) Start(ctx context.Context) error {
 	s.stop = cancel
 	s.mu.Unlock()
 
-	err := s.connect(ctx)
+	err := s.attempt(ctx)
 	go s.supervise(ctx)
 	return err
+}
+
+// attempt runs one bounded connection attempt.
+func (s *SerialOBD) attempt(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, connectTimeout)
+	defer cancel()
+	return s.connect(ctx)
 }
 
 // connect opens and negotiates, replacing any existing connection.
@@ -113,7 +130,7 @@ func (s *SerialOBD) supervise(ctx context.Context) {
 			if s.IsConnected() {
 				continue
 			}
-			if err := s.connect(ctx); err == nil {
+			if err := s.attempt(ctx); err == nil {
 				log.Info("Adapter connected")
 			}
 		}

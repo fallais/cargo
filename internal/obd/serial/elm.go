@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"strings"
 	"sync"
 	"time"
@@ -108,7 +109,10 @@ func Open(ctx context.Context, opts Options) (*ELM327, error) {
 		rates = []int{opts.Baud}
 	}
 
-	var opened bool
+	var (
+		opened      bool
+		lastOpenErr error
+	)
 	for _, name := range ports {
 		for _, baud := range rates {
 			if err := ctx.Err(); err != nil {
@@ -127,6 +131,7 @@ func Open(ctx context.Context, opts Options) (*ELM327, error) {
 				// A device that is absent or busy fails the same way
 				// at every rate, so move to the next device.
 				log.Debug("Port unavailable", zap.String("port", name), zap.Error(err))
+				lastOpenErr = err
 				break
 			}
 			opened = true
@@ -154,6 +159,18 @@ func Open(ctx context.Context, opts Options) (*ELM327, error) {
 	}
 
 	if !opened {
+		// Report why the device could not be opened, not just that it was
+		// not. A permission error looks identical to an absent adapter
+		// from the outside, and on Linux it is the more likely of the two
+		// once a device node exists at all.
+		if lastOpenErr != nil {
+			if errors.Is(lastOpenErr, fs.ErrPermission) {
+				return nil, fmt.Errorf("%w: %v (the device exists but is not readable; "+
+					"on Linux add yourself to the dialout group and log back in)",
+					ErrNoAdapter, lastOpenErr)
+			}
+			return nil, fmt.Errorf("%w: %v", ErrNoAdapter, lastOpenErr)
+		}
 		return nil, fmt.Errorf("%w: tried %s", ErrNoAdapter, strings.Join(ports, ", "))
 	}
 	return nil, fmt.Errorf("a device opened but did not answer as an ELM327 (tried %s)",

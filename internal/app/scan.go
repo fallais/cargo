@@ -74,10 +74,10 @@ func Scan(ctx context.Context, opts ScanOptions) error {
 
 	provider := newProvider(opts)
 
-	startCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	defer cancel()
-
-	startErr := provider.Start(startCtx)
+	// The session context, not a startup one: the provider keeps a
+	// reconnect loop alive on whatever it is given, and a context that
+	// expires would silently stop it noticing an adapter plugged in later.
+	startErr := provider.Start(ctx)
 	defer provider.Stop()
 
 	// The one-shot report has nothing to show without a vehicle, so a failed
