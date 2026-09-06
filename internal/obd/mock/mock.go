@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"cargo/internal/dtc"
-	"cargo/internal/obd"
+	"github.com/fallais/cargo/internal/dtc"
+	"github.com/fallais/cargo/internal/obd"
 )
 
 // MockOBD simulates a vehicle with several controllers, so the module

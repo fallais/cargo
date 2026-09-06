@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"cargo/internal/dtc"
-	"cargo/pkg/log"
+	"github.com/fallais/cargo/internal/dtc"
+	"github.com/fallais/cargo/pkg/log"
 
 	"go.uber.org/zap"
 )

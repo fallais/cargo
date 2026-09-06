@@ -1,7 +1,7 @@
 package main
 
 import (
-	"cargo/cmd"
+	"github.com/fallais/cargo/cmd"
 )
 
 // version is stamped by the release build:

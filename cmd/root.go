@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"cargo/pkg/log"
+	"github.com/fallais/cargo/pkg/log"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -90,6 +90,8 @@ func initConfig() {
 	}
 }
 
+// Execute runs the command line. It flushes the logger and exits non-zero on
+// failure, so callers do not have to.
 func Execute() {
 	err := rootCmd.Execute()
 	log.Sync()

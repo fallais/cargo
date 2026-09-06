@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"cargo/internal/dtcimport"
+	"github.com/fallais/cargo/internal/dtcimport"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"

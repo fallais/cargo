@@ -1,4 +1,4 @@
-module cargo
+module github.com/fallais/cargo
 
 go 1.25.0
 

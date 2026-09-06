@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"cargo/internal/dtc"
+	"github.com/fallais/cargo/internal/dtc"
 )
 
 // Byte-accurate cases. A UDS record is three code bytes plus a status byte.

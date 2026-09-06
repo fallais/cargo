@@ -3,7 +3,7 @@ package obd
 import (
 	"context"
 
-	"cargo/internal/dtc"
+	"github.com/fallais/cargo/internal/dtc"
 )
 
 // OBDProvider is the seam between the UI and whatever is answering: a real

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"cargo/pkg/log"
+	"github.com/fallais/cargo/pkg/log"
 
 	"github.com/tarm/serial"
 	"go.uber.org/zap"

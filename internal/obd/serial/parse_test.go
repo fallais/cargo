@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"cargo/internal/dtc"
+	"github.com/fallais/cargo/internal/dtc"
 )
 
 // The adapter's spacing changes with ATS0 and its framing changes when a reply

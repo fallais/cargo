@@ -12,13 +12,13 @@ import (
 	"syscall"
 	"time"
 
-	"cargo/internal/displayer"
-	"cargo/internal/dtc"
-	"cargo/internal/obd"
-	"cargo/internal/obd/mock"
-	"cargo/internal/obd/serial"
-	"cargo/internal/vehicle"
-	"cargo/pkg/log"
+	"github.com/fallais/cargo/internal/displayer"
+	"github.com/fallais/cargo/internal/dtc"
+	"github.com/fallais/cargo/internal/obd"
+	"github.com/fallais/cargo/internal/obd/mock"
+	"github.com/fallais/cargo/internal/obd/serial"
+	"github.com/fallais/cargo/internal/vehicle"
+	"github.com/fallais/cargo/pkg/log"
 
 	"go.uber.org/zap"
 )

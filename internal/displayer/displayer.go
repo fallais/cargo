@@ -7,10 +7,10 @@ import (
 	"sort"
 	"time"
 
-	"cargo/internal/dtc"
-	"cargo/internal/obd"
-	"cargo/internal/vehicle"
-	"cargo/pkg/log"
+	"github.com/fallais/cargo/internal/dtc"
+	"github.com/fallais/cargo/internal/obd"
+	"github.com/fallais/cargo/internal/vehicle"
+	"github.com/fallais/cargo/pkg/log"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"

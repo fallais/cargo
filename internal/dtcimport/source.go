@@ -12,7 +12,7 @@ import (
 	"regexp"
 	"strings"
 
-	"cargo/internal/dtc"
+	"github.com/fallais/cargo/internal/dtc"
 )
 
 // Licence records how a dataset may be used. It is reported at the end of an

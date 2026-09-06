@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"cargo/internal/dtc"
+	"github.com/fallais/cargo/internal/dtc"
 )
 
 // normalizeHex flattens an ELM327 reply into the bytes it carries.

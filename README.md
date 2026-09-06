@@ -16,6 +16,12 @@
   <a href="https://github.com/fallais/cargo/releases">
     <img alt="Release" src="https://img.shields.io/github/v/release/fallais/cargo?style=flat-square&logo=github&color=blue">
   </a>
+  <a href="https://pkg.go.dev/github.com/fallais/cargo">
+    <img alt="Go reference" src="https://pkg.go.dev/badge/github.com/fallais/cargo.svg?style=flat-square">
+  </a>
+  <a href="https://goreportcard.com/report/github.com/fallais/cargo">
+    <img alt="Go report card" src="https://goreportcard.com/badge/github.com/fallais/cargo?style=flat-square">
+  </a>
   <a href="go.mod">
     <img alt="Go" src="https://img.shields.io/github/go-mod/go-version/fallais/cargo?style=flat-square&logo=go&logoColor=white">
   </a>
@@ -40,7 +46,11 @@ as Ford's definition because the VIN identified the car.
 ## Usage
 
 ```
+go install github.com/fallais/cargo@latest
+
+# or from a clone
 go build -o cargo .
+
 ./cargo                 # terminal UI
 ./cargo --mock          # try it without a car
 ./cargo --no-tui        # one-shot report

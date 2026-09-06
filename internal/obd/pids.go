@@ -2,6 +2,8 @@ package obd
 
 import "fmt"
 
+// PID identifies one OBD-II parameter: the service that carries it and the
+// parameter number within that service.
 type PID struct {
 	Mode string
 	Code string
@@ -17,6 +19,7 @@ var (
 	PIDDTCCount        = PID{Mode: "03", Code: "00", Desc: "Number of stored DTCs"}
 )
 
+// String renders the PID as the request bytes sent to the adapter.
 func (p PID) String() string {
 	return fmt.Sprintf("%s%s", p.Mode, p.Code)
 }
