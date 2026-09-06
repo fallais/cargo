@@ -15,9 +15,10 @@ import (
 // MockOBD simulates a vehicle with several controllers, so the module
 // attribution in the UI has something to show.
 type MockOBD struct {
-	mu      sync.RWMutex
-	running bool
-	cancel  context.CancelFunc
+	mu          sync.RWMutex
+	running     bool
+	autoconnect bool
+	cancel      context.CancelFunc
 
 	rpm       int
 	coolant   float64
@@ -92,7 +93,20 @@ func seedCodes() []dtc.DTC {
 	return codes
 }
 
+// Start honours autoconnect the way the real provider does, so the picker
+// behaves the same with or without hardware.
 func (m *MockOBD) Start(ctx context.Context) error {
+	m.mu.Lock()
+	auto := m.autoconnect
+	m.mu.Unlock()
+
+	if !auto {
+		return nil
+	}
+	return m.connect(ctx)
+}
+
+func (m *MockOBD) connect(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -147,7 +161,33 @@ func (m *MockOBD) IsConnected() bool {
 	return m.running
 }
 
-func (m *MockOBD) Description() string { return "mock vehicle" }
+func (m *MockOBD) Description() string {
+	if !m.IsConnected() {
+		return "mock adapter, not connected"
+	}
+	return "mock vehicle"
+}
+
+// Adapters offers one simulated device so the picker has something to show.
+func (m *MockOBD) Adapters() []obd.Adapter {
+	return []obd.Adapter{{Port: "mock0", Detail: "simulated ELM327", Connected: m.IsConnected()}}
+}
+
+func (m *MockOBD) Connect(ctx context.Context, _ string) error { return m.connect(ctx) }
+
+func (m *MockOBD) Disconnect() { m.Stop() }
+
+func (m *MockOBD) SetAutoconnect(on bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.autoconnect = on
+}
+
+func (m *MockOBD) Autoconnect() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.autoconnect
+}
 
 // GetVIN returns a well-formed VIN, check digit included, so the picker and
 // the decoding behind it can be exercised without a car.

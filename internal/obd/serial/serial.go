@@ -32,7 +32,10 @@ const reconnectDelay = 3 * time.Second
 type SerialOBD struct {
 	opts Options
 
-	stop      context.CancelFunc
+	stop        context.CancelFunc
+	sessionCtx  context.Context
+	autoconnect bool
+
 	mu        sync.RWMutex
 	elm       *ELM327
 	connected bool
@@ -54,40 +57,121 @@ func New(opts Options) *SerialOBD {
 // up on each other.
 const connectTimeout = 20 * time.Second
 
-// Start makes one connection attempt and then keeps trying in the background.
+// Start begins the session. It connects immediately only when autoconnect is
+// on; otherwise it waits to be told which adapter to use.
 //
-// ctx must last for the whole session, not just for startup. It is what stops
-// the supervisor, so a context that expires takes reconnection with it: an
-// adapter plugged in afterwards would never be noticed. Each attempt gets its
-// own bounded child instead.
-//
-// The returned error reports only the first attempt. A caller that needs a
-// vehicle right now - the one-shot report - should treat it as fatal, but the
-// UI should not: an adapter that is not plugged in yet is the normal way a
-// session starts, and the supervisor turns that into a status line rather than
-// an exit.
+// ctx must last for the whole session. It is what stops the supervisor, so a
+// context that expires takes reconnection with it and an adapter plugged in
+// afterwards would never be noticed. Each attempt gets a bounded child.
 func (s *SerialOBD) Start(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 
 	s.mu.Lock()
 	s.stop = cancel
+	s.sessionCtx = ctx
+	auto := s.autoconnect
 	s.mu.Unlock()
 
-	err := s.attempt(ctx)
 	go s.supervise(ctx)
-	return err
+
+	if !auto {
+		return nil
+	}
+	return s.attempt(ctx, "")
 }
 
-// attempt runs one bounded connection attempt.
-func (s *SerialOBD) attempt(ctx context.Context) error {
+// Connect attaches to a named adapter, replacing any current connection.
+func (s *SerialOBD) Connect(ctx context.Context, port string) error {
+	s.Disconnect()
+
+	s.mu.RLock()
+	session := s.sessionCtx
+	s.mu.RUnlock()
+	if session == nil {
+		session = ctx
+	}
+
+	return s.attempt(session, port)
+}
+
+// Disconnect releases the adapter but leaves the session running, so the user
+// can pick a different one.
+func (s *SerialOBD) Disconnect() {
+	s.mu.Lock()
+	elm := s.elm
+	s.elm = nil
+	s.connected = false
+	s.lastErr = nil
+	s.mu.Unlock()
+
+	if elm != nil {
+		if err := elm.Close(); err != nil {
+			slog.Debug("Closing adapter", "error", err)
+		}
+	}
+}
+
+// SetAutoconnect turns background reconnection on or off.
+func (s *SerialOBD) SetAutoconnect(on bool) {
+	s.mu.Lock()
+	s.autoconnect = on
+	s.mu.Unlock()
+}
+
+// Autoconnect reports whether background reconnection is on.
+func (s *SerialOBD) Autoconnect() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.autoconnect
+}
+
+// Adapters lists the devices that could be connected to.
+func (s *SerialOBD) Adapters() []obd.Adapter {
+	s.mu.RLock()
+	configured := s.opts.Port
+	s.mu.RUnlock()
+
+	s.mu.RLock()
+	live := ""
+	if s.connected && s.elm != nil {
+		live = s.elm.portName
+	}
+	s.mu.RUnlock()
+
+	ports := []string{configured}
+	if configured == "" {
+		ports = listPlatformSerialDevs()
+	}
+
+	adapters := make([]obd.Adapter, 0, len(ports))
+	for _, port := range ports {
+		adapters = append(adapters, obd.Adapter{
+			Port:      port,
+			Detail:    describeDevice(port),
+			Connected: port == live,
+		})
+	}
+	return adapters
+}
+
+// attempt runs one bounded connection attempt against a specific port, or any
+// candidate when port is empty.
+func (s *SerialOBD) attempt(ctx context.Context, port string) error {
 	ctx, cancel := context.WithTimeout(ctx, connectTimeout)
 	defer cancel()
-	return s.connect(ctx)
+	return s.connect(ctx, port)
 }
 
 // connect opens and negotiates, replacing any existing connection.
-func (s *SerialOBD) connect(ctx context.Context) error {
-	elm, err := Open(ctx, s.opts)
+func (s *SerialOBD) connect(ctx context.Context, port string) error {
+	s.mu.RLock()
+	opts := s.opts
+	s.mu.RUnlock()
+	if port != "" {
+		opts.Port = port
+	}
+
+	elm, err := Open(ctx, opts)
 	if err != nil {
 		s.setError(err)
 		return err
@@ -125,10 +209,13 @@ func (s *SerialOBD) supervise(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if s.IsConnected() {
+			// Only reconnect on our own initiative when asked to.
+			// Otherwise a user who deliberately disconnected would find
+			// themselves reattached a few seconds later.
+			if s.IsConnected() || !s.Autoconnect() {
 				continue
 			}
-			if err := s.attempt(ctx); err == nil {
+			if err := s.attempt(ctx, ""); err == nil {
 				slog.Info("Adapter connected")
 			}
 		}
@@ -148,6 +235,7 @@ func (s *SerialOBD) Stop() {
 	stop := s.stop
 	s.elm = nil
 	s.stop = nil
+	s.sessionCtx = nil
 	s.connected = false
 	s.mu.Unlock()
 
@@ -177,12 +265,15 @@ func (s *SerialOBD) Description() string {
 		return fmt.Sprintf("%s @ %s", elm.portName, elm.ProtocolName())
 	}
 	if errors.Is(err, ErrNoAdapter) {
-		return "waiting for an adapter"
+		return "no adapter found"
 	}
 	if err != nil {
 		return "retrying: " + err.Error()
 	}
-	return "connecting"
+	if s.Autoconnect() {
+		return "waiting for an adapter"
+	}
+	return "not connected"
 }
 
 // adapter returns the live connection, or ErrNotConnected.

@@ -30,6 +30,10 @@ func detectPlatformSerialDev() string {
 	return "/dev/cu.usbserial"
 }
 
+// describeDevice has nothing to add on macOS: the device name already
+// carries the bridge or the paired name.
+func describeDevice(string) string { return "" }
+
 // candidateDescription says where we looked, for an error message.
 func candidateDescription() string {
 	return strings.Join(candidatePatterns, ", ")

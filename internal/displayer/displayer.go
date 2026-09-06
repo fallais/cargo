@@ -60,18 +60,23 @@ type Displayer struct {
 	state   snapshot
 	stateMu chan struct{} // 1-buffered, used as a mutex
 
-	dashPages   *tview.Pages
-	rpmText     *tview.TextView
-	coolantText *tview.TextView
-	odoText     *tview.TextView
-	oilText     *tview.TextView
-	statusText  *tview.TextView
-	helpText    *tview.TextView
-	dtcTable    *tview.Table
-	dtcSummary  *tview.TextView
-	vehicleList *tview.List
-	vehicleInfo *tview.TextView
-	flashText   *tview.TextView
+	dashPages     *tview.Pages
+	rpmText       *tview.TextView
+	coolantText   *tview.TextView
+	odoText       *tview.TextView
+	oilText       *tview.TextView
+	statusText    *tview.TextView
+	helpText      *tview.TextView
+	dtcTable      *tview.Table
+	dtcSummary    *tview.TextView
+	adapterList   *tview.List
+	adapterInfo   *tview.TextView
+	adapters      []obd.Adapter
+	connectedPort string
+	brand         *tview.TextView
+	vehicleList   *tview.List
+	vehicleInfo   *tview.TextView
+	flashText     *tview.TextView
 }
 
 func New(provider obd.OBDProvider, resolver *dtc.Resolver, garage *vehicle.Garage, makes []string) *Displayer {
@@ -114,26 +119,29 @@ func (d *Displayer) lock()   { <-d.stateMu }
 func (d *Displayer) unlock() { d.stateMu <- struct{}{} }
 
 func (d *Displayer) Run() error {
-	title := tview.NewTextView().
-		SetTextAlign(tview.AlignCenter).
-		SetText("cargo - command-line OBD-II tool")
-	d.statusText = tview.NewTextView().SetTextAlign(tview.AlignCenter).SetDynamicColors(true)
-	d.helpText = tview.NewTextView().
-		SetTextAlign(tview.AlignCenter).
-		SetDynamicColors(true)
-	d.flashText = tview.NewTextView().SetDynamicColors(true)
+	d.brand = tview.NewTextView().SetDynamicColors(true).SetText(wordmark)
 
-	header := tview.NewFlex().SetDirection(tview.FlexRow)
-	header.AddItem(title, 1, 0, false)
-	header.AddItem(d.statusText, 1, 0, false)
-	header.AddItem(d.helpText, 1, 0, false)
+	d.statusText = tview.NewTextView().
+		SetDynamicColors(true).
+		SetTextAlign(tview.AlignRight)
+
+	banner := tview.NewFlex()
+	banner.AddItem(d.brand, len([]rune(wordmarkLine))+2, 0, false)
+	banner.AddItem(d.statusText, 0, 1, false)
+
+	d.helpText = tview.NewTextView().
+		SetDynamicColors(true).
+		SetTextAlign(tview.AlignCenter)
+	d.flashText = tview.NewTextView().SetDynamicColors(true)
 
 	d.pages.AddPage("dashboard", d.buildDashboard(), true, true)
 	d.pages.AddPage("dtc", d.buildDTC(), true, false)
 	d.pages.AddPage("vehicle", d.buildVehicle(), true, false)
+	d.pages.AddPage("adapter", d.buildAdapter(), true, false)
 
 	root := tview.NewFlex().SetDirection(tview.FlexRow)
-	root.AddItem(header, 3, 0, false)
+	root.AddItem(banner, 3, 0, false)
+	root.AddItem(d.helpText, 1, 0, false)
 	root.AddItem(d.pages, 0, 1, true)
 	root.AddItem(d.flashText, 1, 0, false)
 
@@ -144,6 +152,7 @@ func (d *Displayer) Run() error {
 
 	go d.pollLive()
 	go d.pollDTCs()
+	go d.watchConnection()
 
 	return d.app.Run()
 }
@@ -159,22 +168,32 @@ func (d *Displayer) onKey(event *tcell.EventKey) *tcell.EventKey {
 	case 'q', 'Q':
 		d.Shutdown()
 		return nil
-	case '1':
+	case 'd', 'D':
 		d.showPage("dashboard")
 		return nil
-	case '2':
+	case 'c', 'C':
 		d.showPage("dtc")
 		return nil
-	case '3':
+	case 'v', 'V':
 		d.showPage("vehicle")
 		return nil
-	case 'r', 'R':
-		go d.refreshDTCs()
+	case 'a', 'A':
+		d.showPage("adapter")
 		return nil
 	}
 
-	if name, _ := d.pages.GetFrontPage(); name == "vehicle" {
+	// Page-local keys are chosen not to collide with the navigation above,
+	// which is checked first.
+	switch name, _ := d.pages.GetFrontPage(); name {
+	case "vehicle":
 		return d.onVehicleKey(event)
+	case "adapter":
+		return d.onAdapterKey(event)
+	case "dtc":
+		if event.Rune() == 'r' || event.Rune() == 'R' {
+			go d.refreshDTCs()
+			return nil
+		}
 	}
 	return event
 }
@@ -185,15 +204,23 @@ func (d *Displayer) showPage(name string) {
 	d.paintHelp(name)
 }
 
+// nav is the page switcher. Letters rather than digits: "2 Codes" reads as a
+// count of codes, which is exactly the wrong thing on this screen.
+const nav = "[::b]d[::-] Dashboard  [::b]c[::-] Codes  [::b]v[::-] Vehicle  " +
+	"[::b]a[::-] Adapter  [::b]q[::-] Quit"
+
 func (d *Displayer) paintHelp(page string) {
-	common := "[::b]1[::-] Dashboard  [::b]2[::-] Codes  [::b]3[::-] Vehicle  [::b]q[::-] Quit"
+	local := ""
 	switch page {
 	case "dtc":
-		common = "[::b]r[::-] Rescan   " + common
+		local = "[::b]r[::-] Rescan     "
 	case "vehicle":
-		common = "[::b]v[::-] Read VIN  [::b]m[::-] Make  [::b]n[::-] Add  [::b]x[::-] Remove   " + common
+		local = "[::b]r[::-] Read VIN  [::b]m[::-] Make  [::b]n[::-] Add  [::b]x[::-] Remove     "
+	case "adapter":
+		local = "[::b]enter[::-] Connect  [::b]x[::-] Disconnect  [::b]s[::-] Scan  " +
+			"[::b]t[::-] Autoconnect     "
 	}
-	d.helpText.SetText(common)
+	d.helpText.SetText(local + nav)
 }
 
 // flash shows a transient message under the page.
@@ -471,15 +498,17 @@ func (d *Displayer) paintDashboard(s snapshot) {
 	d.oilText.SetText("  Oil temp (°C)    " + value(s.errs["oil"], "%.1f", s.oil))
 	d.odoText.SetText("  Distance (km)    " + value(s.errs["odometer"], "%d", s.kilometres))
 
-	status := "[red]disconnected[white]"
+	dot, state := "[red]\u25cf[white]", "not connected"
 	if s.connected {
-		status = "[green]connected[white]"
+		dot, state = "[green]\u25cf[white]", "connected"
 	}
-	line := fmt.Sprintf("%s - %s", status, d.provider.Description())
+
+	// Right-aligned, one fact per line beside the wordmark.
+	status := fmt.Sprintf("%s %s \n[gray]%s[white] \n", dot, state, d.provider.Description())
 	if make := d.codeMake(); make != "" {
-		line += fmt.Sprintf("  [aqua][%s][white]", make)
+		status += fmt.Sprintf("[aqua]%s[white] ", make)
 	}
-	d.statusText.SetText(line)
+	d.statusText.SetText(status)
 }
 
 // pollDTCs rescans the modules on a slow cadence.
@@ -515,3 +544,10 @@ func (d *Displayer) refreshDTCs() {
 
 	d.app.QueueUpdateDraw(func() { d.renderDTCTable(codes) })
 }
+
+// wordmark is the name in box-drawing capitals, three rows so it sits level
+// with the connection state beside it.
+const wordmark = "[#f7ac16]┌─┐┌─┐┬─┐┌─┐┌─┐\n│  ├─┤├┬┘│ ┬│ │\n└─┘┴ ┴┴└─└─┘└─┘[white]"
+
+// wordmarkLine is one row of it, for measuring the column width.
+const wordmarkLine = "┌─┐┌─┐┬─┐┌─┐┌─┐"

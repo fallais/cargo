@@ -30,7 +30,7 @@ func (d *Displayer) buildVehicle() tview.Primitive {
 
 	help := tview.NewTextView().
 		SetDynamicColors(true).
-		SetText("[::b]enter[::-] use   [::b]v[::-] read VIN from car   " +
+		SetText("[::b]enter[::-] use   [::b]r[::-] read VIN from car   " +
 			"[::b]m[::-] set make   [::b]n[::-] add   [::b]x[::-] remove")
 
 	right := tview.NewFlex().SetDirection(tview.FlexRow)
@@ -72,7 +72,7 @@ func (d *Displayer) refreshVehicleList() {
 	}
 
 	if len(d.garage.Vehicles) == 0 {
-		d.vehicleList.AddItem("No vehicles yet", "   press v to read the VIN, or n to add one", 0, nil)
+		d.vehicleList.AddItem("No vehicles yet", "   press r to read the VIN, or n to add one", 0, nil)
 	}
 
 	if current < d.vehicleList.GetItemCount() {
@@ -87,7 +87,7 @@ func (d *Displayer) paintVehicleInfo() {
 		d.vehicleInfo.SetText("\n  No vehicle configured.\n\n" +
 			"  [yellow]Manufacturer-specific codes cannot be resolved\n" +
 			"  without knowing the make.[white]\n\n" +
-			"  Press [::b]v[::-] to read the VIN from the car, or [::b]m[::-]\n" +
+			"  Press [::b]r[::-] to read the VIN from the car, or [::b]m[::-]\n" +
 			"  to choose the make yourself.")
 		return
 	}
@@ -318,7 +318,7 @@ func (d *Displayer) removeVehicle() {
 // onVehicleKey handles keys while the vehicle page is showing.
 func (d *Displayer) onVehicleKey(event *tcell.EventKey) *tcell.EventKey {
 	switch event.Rune() {
-	case 'v', 'V':
+	case 'r', 'R':
 		d.detectVehicle()
 		return nil
 	case 'm', 'M':

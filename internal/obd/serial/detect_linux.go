@@ -1,6 +1,7 @@
 package serial
 
 import (
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -24,6 +25,35 @@ func detectPlatformSerialDev() string {
 		return ports[0]
 	}
 	return "/dev/ttyUSB0"
+}
+
+// describeDevice reports what the kernel knows about a device, so the adapter
+// list shows something recognisable rather than a bare path.
+func describeDevice(port string) string {
+	name := filepath.Base(port)
+	base := filepath.Join("/sys/class/tty", name, "device")
+
+	// USB attributes live a couple of levels up from the tty device.
+	for _, dir := range []string{base, filepath.Join(base, ".."), filepath.Join(base, "..", "..")} {
+		manufacturer := readSysfs(filepath.Join(dir, "manufacturer"))
+		product := readSysfs(filepath.Join(dir, "product"))
+		if product != "" {
+			return strings.TrimSpace(manufacturer + " " + product)
+		}
+	}
+
+	if driver, err := os.Readlink(filepath.Join(base, "driver")); err == nil {
+		return filepath.Base(driver)
+	}
+	return ""
+}
+
+func readSysfs(path string) string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
 }
 
 // candidateDescription says where we looked, for an error message.

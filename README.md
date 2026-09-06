@@ -56,10 +56,17 @@ go build -o cargo .
 ./cargo --no-tui        # one-shot report
 ```
 
-The UI starts whether or not an adapter is attached, and connects on its own
-once one appears.
+Keys: `d` dashboard, `c` codes, `v` vehicle, `a` adapter, `q` quit.
 
-Keys: `1` dashboard, `2` trouble codes, `3` vehicle, `q` quit.
+## Connecting
+
+The UI starts without attaching to anything. The adapter page (`a`) lists the
+devices it can see, and `enter` connects to the one you pick, because attaching
+to a car is not something to do behind your back.
+
+`t` on that page turns on autoconnect, which attaches to the first adapter that
+answers and reattaches if the cable is pulled. `--autoconnect` starts that way.
+The one-shot report has no picker, so it always connects on its own.
 
 ## Flags
 
@@ -68,6 +75,7 @@ Keys: `1` dashboard, `2` trouble codes, `3` vehicle, `q` quit.
 | `--port` | adapter device (default: scan `ttyUSB*`, `ttyACM*`, `rfcomm*`) |
 | `--baud` | serial rate (default: probe 38400, 9600, 115200, 230400, 500000) |
 | `--make` | vehicle marque, overriding the selected vehicle for one run |
+| `--autoconnect` | attach to the first adapter that answers, without being asked |
 | `--mock` | simulated vehicle |
 | `--no-tui` | print one report and exit |
 | `--debug` | verbose logging |
@@ -98,7 +106,7 @@ Around 700 manufacturer codes mean different things on different marques, so
 the tool needs to know which car it is attached to. The vehicle page (`3`)
 keeps a garage of profiles and applies the selected one to every lookup.
 
-Press `v` and it reads the VIN from the car (mode 09 PID 02), decodes the
+Press `r` and it reads the VIN from the car (mode 09 PID 02), decodes the
 manufacturer and model year, and saves the profile. Where the VIN is not
 available, which is common before the 2005 model year, press `m` and pick the
 make. The choice persists in `$XDG_CONFIG_HOME/cargo/garage.json`.

@@ -12,3 +12,5 @@ func candidateDescription() string {
 }
 
 func listPlatformSerialDevs() []string { return nil }
+
+func describeDevice(string) string { return "" }

@@ -13,7 +13,7 @@ import (
 // scanFlagNames is shared so the root command, which delegates to scan, binds
 // exactly the same set. Letting the two drift is how "--mock" silently stops
 // working on one of them.
-var scanFlagNames = []string{"no-tui", "mock", "port", "baud", "timeout", "make"}
+var scanFlagNames = []string{"no-tui", "mock", "port", "baud", "timeout", "make", "autoconnect"}
 
 // registerScanFlags declares the scan flags on a flag set.
 func registerScanFlags(flags *pflag.FlagSet) {
@@ -25,18 +25,20 @@ func registerScanFlags(flags *pflag.FlagSet) {
 	flags.Int("baud", 0, "Serial baud rate (default: try 38400, 9600, 115200, 230400, 500000)")
 	flags.Duration("timeout", 5*time.Second, "Timeout for a single adapter command")
 	flags.String("make", "", "Vehicle make, to disambiguate manufacturer-specific codes")
+	flags.Bool("autoconnect", false, "Attach to the first adapter that answers, without being asked")
 }
 
 // runScan is shared by "cargo scan" and by bare "cargo".
 func runScan(cmd *cobra.Command, args []string) error {
 	return app.Scan(cmd.Context(), app.ScanOptions{
-		Debug:   viper.GetBool("debug"),
-		Mock:    viper.GetBool("mock"),
-		NoTUI:   viper.GetBool("no-tui"),
-		Port:    viper.GetString("port"),
-		Baud:    viper.GetInt("baud"),
-		Timeout: viper.GetDuration("timeout"),
-		Make:    viper.GetString("make"),
+		Debug:       viper.GetBool("debug"),
+		Mock:        viper.GetBool("mock"),
+		NoTUI:       viper.GetBool("no-tui"),
+		Port:        viper.GetString("port"),
+		Baud:        viper.GetInt("baud"),
+		Timeout:     viper.GetDuration("timeout"),
+		Make:        viper.GetString("make"),
+		Autoconnect: viper.GetBool("autoconnect"),
 	})
 }
 

@@ -24,13 +24,14 @@ import (
 // ScanOptions is everything the scan needs. Passing a struct rather than
 // reading viper in here keeps the logic testable and makes the inputs visible.
 type ScanOptions struct {
-	Debug   bool
-	Mock    bool
-	NoTUI   bool
-	Port    string
-	Baud    int
-	Timeout time.Duration
-	Make    string
+	Debug       bool
+	Mock        bool
+	Autoconnect bool
+	NoTUI       bool
+	Port        string
+	Baud        int
+	Timeout     time.Duration
+	Make        string
 }
 
 // Scan connects to a vehicle and either runs the UI or prints one report.
@@ -88,6 +89,8 @@ func Scan(ctx context.Context, opts ScanOptions) error {
 	}
 
 	provider := newProvider(opts)
+	// The report has no picker, so it has to attach on its own.
+	provider.SetAutoconnect(opts.Autoconnect || opts.NoTUI)
 
 	// The session context, not a startup one: the provider keeps a
 	// reconnect loop alive on whatever it is given, and a context that
