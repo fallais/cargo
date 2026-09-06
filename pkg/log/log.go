@@ -5,7 +5,9 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-var logger *zap.Logger
+// logger starts as a no-op rather than nil so that anything logging before
+// cobra runs InitLogger degrades to silence instead of a nil dereference.
+var logger = zap.NewNop()
 
 func InitLogger(debug bool) {
 	var err error
@@ -43,4 +45,12 @@ func Warn(msg string, fields ...zap.Field) {
 
 func Fatal(msg string, fields ...zap.Field) {
 	logger.Fatal(msg, fields...)
+}
+
+// Sync flushes buffered log entries. Zap buffers writes, so without this the
+// last few lines before exit can be lost.
+func Sync() {
+	if logger != nil {
+		_ = logger.Sync()
+	}
 }

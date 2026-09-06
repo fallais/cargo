@@ -1,0 +1,34 @@
+# Hand-curated additions and corrections.
+#
+# NOT generated: "cargo import" rewrites generic.csv and manufacturer.csv but
+# never touches this file. Anything the open datasets miss or get wrong for a
+# code worth carrying belongs here, and it takes precedence over both.
+#
+# The TPMS and body codes below came from this project's original built-in
+# table and are absent from the imported sources.
+#
+# Records are sorted by code then make; internal/dtc verifies that on load.
+#
+# format: code,make,description
+B1000,,Body Control Module Malfunction
+B1600,,Ignition Switch Malfunction
+C1A00,,TPMS Control Module Malfunction
+C1A01,,TPMS Module Configuration Error
+C1A02,,TPMS RF Receiver Malfunction
+C1A11,,Tire Pressure Sensor LF Malfunction
+C1A12,,Tire Pressure Sensor RF Malfunction
+C1A13,,Tire Pressure Sensor RR Malfunction
+C1A14,,Tire Pressure Sensor LR Malfunction
+C1A15,,TPMS System Malfunction
+C2100,,Tire Pressure Too Low - Left Front
+C2101,,Tire Pressure Too Low - Right Front
+C2102,,Tire Pressure Too Low - Right Rear
+C2103,,Tire Pressure Too Low - Left Rear
+C2111,,Tire Pressure Sensor Battery Low - LF
+C2112,,Tire Pressure Sensor Battery Low - RF
+C2113,,Tire Pressure Sensor Battery Low - RR
+C2114,,Tire Pressure Sensor Battery Low - LR
+C2200,,Tire Pressure Sensor Missing - LF
+C2201,,Tire Pressure Sensor Missing - RF
+C2202,,Tire Pressure Sensor Missing - RR
+C2203,,Tire Pressure Sensor Missing - LR

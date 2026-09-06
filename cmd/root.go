@@ -1,10 +1,12 @@
+// Package cmd wires the command line. It is deliberately thin: each file
+// declares one command and its flags, and the work lives in internal/app.
 package cmd
 
 import (
 	"fmt"
 	"os"
+	"strings"
 
-	"cargo/internal/cmd/root"
 	"cargo/pkg/log"
 
 	"github.com/spf13/cobra"
@@ -12,37 +14,75 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use: "cargo",
-	Run: root.Run,
+	Use:   "cargo",
+	Short: "Read live data and trouble codes from a vehicle over OBD-II",
+	Long: "cargo talks to a vehicle through an ELM327 adapter and shows live\n" +
+		"readings and diagnostic trouble codes, in a terminal UI or as a\n" +
+		"one-shot report.",
+	// With no subcommand, scan is what people want. Both the binding and
+	// the run have to be delegated: cobra does not inherit a subcommand's
+	// PreRunE, and without it the scan flags never reach viper.
+	PreRunE: func(cmd *cobra.Command, args []string) error {
+		return bindFlags(cmd.Flags(), scanFlagNames...)
+	},
+	RunE: runScan,
+	// Errors are logged where they happen and returned to Execute; without
+	// these, cobra prints the full usage text after every runtime failure,
+	// which buries the actual message.
+	SilenceUsage:  true,
+	SilenceErrors: true,
 }
 
 func init() {
-	cobra.OnInitialize(initLogger)
+	cobra.OnInitialize(initConfig)
 
-	rootCmd.PersistentFlags().Bool("debug", false, "Enable debug mode")
-	rootCmd.PersistentFlags().Bool("no-tui", false, "Run without TUI (for testing)")
-	rootCmd.PersistentFlags().Bool("mock", false, "Use mock OBD provider")
-	rootCmd.PersistentFlags().Int("baud", 84000, "Baud rate for serial connection")
+	// Only genuinely global settings belong on the root command. Per-command
+	// flags live with their command.
+	flags := rootCmd.PersistentFlags()
+	flags.Bool("debug", false, "Enable verbose logging")
+	flags.String("config", "", "Config file (default: $XDG_CONFIG_HOME/cargo/cargo.yaml)")
 
-	viper.BindPFlag("debug", rootCmd.PersistentFlags().Lookup("debug"))
-	viper.BindPFlag("no-tui", rootCmd.PersistentFlags().Lookup("no-tui"))
-	viper.BindPFlag("mock", rootCmd.PersistentFlags().Lookup("mock"))
-	viper.BindPFlag("baud", rootCmd.PersistentFlags().Lookup("baud"))
-
-	// Set default values
-	viper.SetDefault("debug", false)
-	viper.SetDefault("no-tui", false)
-	viper.SetDefault("mock", false)
-	viper.SetDefault("baud", 84000)
+	// Persistent flags are global, so binding them once at startup is safe.
+	// Per-command flags are bound in each command's PreRunE instead: viper
+	// keys share one namespace, and two commands declaring the same flag
+	// name would otherwise overwrite each other's binding.
+	if err := bindFlags(flags, "debug", "config"); err != nil {
+		panic(err)
+	}
 }
 
-func initLogger() {
+func initConfig() {
 	log.InitLogger(viper.GetBool("debug"))
+
+	if path := viper.GetString("config"); path != "" {
+		viper.SetConfigFile(path)
+	} else {
+		if dir, err := os.UserConfigDir(); err == nil {
+			viper.AddConfigPath(dir + "/cargo")
+		}
+		viper.AddConfigPath(".")
+		viper.SetConfigName("cargo")
+	}
+
+	// CARGO_PORT, CARGO_BAUD, CARGO_NO_TUI and so on.
+	viper.SetEnvPrefix("CARGO")
+	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
+	viper.AutomaticEnv()
+
+	if err := viper.ReadInConfig(); err != nil {
+		var notFound viper.ConfigFileNotFoundError
+		if !isNotFound(err, &notFound) {
+			log.Warn("Ignoring unreadable config file")
+		}
+	}
 }
 
 func Execute() {
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Println(err)
+	err := rootCmd.Execute()
+	log.Sync()
+
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "cargo:", err)
 		os.Exit(1)
 	}
 }
