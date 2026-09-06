@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="cargo" width="440">
+</p>
+
 # cargo
 
 A command-line OBD-II tool. Reads live data and diagnostic trouble codes from a
@@ -31,11 +35,15 @@ Any flag can also be set via `CARGO_*` environment variables or
 
 ## Trouble codes
 
-Codes are read from every ECU that answers (stored mode 03, pending 07 and
-permanent 0A) and reported with the module they came from and how confirmed
-they are. Non-emissions modules such as ABS and airbag are addressed on a
-best-effort basis: most answer UDS `0x19` rather than OBD-II mode 03, which is
-not yet implemented.
+Codes are read from every ECU that answers, and reported with the module they
+came from and how confirmed they are.
+
+The protocol depends on the module. Emissions controllers answer the OBD-II
+modes, giving stored (03), pending (07) and permanent (0A) codes. ABS, airbag,
+body and TPMS controllers answer UDS service `0x19` instead, where each code
+carries a failure type saying how the component failed, so a fault reads as
+`C0035-64` rather than just `C0035`. A `!` beside the status means the module
+is asking for a warning lamp.
 
 Descriptions come from an embedded catalog of ~18,000 definitions. A code with
 no entry is still described from its own encoding rather than reported as
