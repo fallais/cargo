@@ -39,7 +39,9 @@ func New() *MockOBD {
 }
 
 func seedCodes() []dtc.DTC {
-	seed := []struct {
+	// The emissions modules answer the OBD-II modes, which carry no failure
+	// type: severity comes from which mode replied.
+	obd2 := []struct {
 		code   string
 		module string
 		status dtc.Status
@@ -49,20 +51,42 @@ func seedCodes() []dtc.DTC {
 		{"P0133", "Engine", dtc.Pending},
 		{"P0455", "Engine", dtc.Permanent},
 		{"P0740", "Transmission", dtc.Stored},
-		{"C1A15", "TPMS", dtc.Stored},
-		// Vendor space and in no catalog: exercises the fallback that
-		// describes a code from its encoding alone.
+		// Vendor space: exercises make disambiguation.
 		{"P1234", "Engine", dtc.Stored},
 	}
 
-	codes := make([]dtc.DTC, 0, len(seed))
-	for _, s := range seed {
+	// The chassis and body modules answer UDS, where each code carries a
+	// failure type saying how the component failed and a status byte saying
+	// how confirmed the fault is.
+	uds := []struct {
+		a, b, failure, status byte
+		module                string
+	}{
+		// C0035-64: wheel speed sensor supply, signal implausible.
+		{0x40, 0x35, 0x64, dtc.StatusConfirmed | dtc.StatusTestFailed, "ABS"},
+		// C0040-13: brake pedal switch, circuit open, lamp requested.
+		{0x40, 0x40, 0x13, dtc.StatusConfirmed | dtc.StatusWarningRequested, "ABS"},
+		// B0001-1C: driver airbag deployment circuit, voltage out of range.
+		{0x80, 0x01, 0x1C, dtc.StatusConfirmed, "Airbag"},
+		// B0081-11: seat belt load limiter, short to ground, unconfirmed.
+		{0x80, 0x81, 0x11, dtc.StatusPending, "Airbag"},
+		// C1A15-00: a module reporting no failure-type detail.
+		{0x5A, 0x15, 0x00, dtc.StatusConfirmed, "TPMS"},
+	}
+
+	codes := make([]dtc.DTC, 0, len(obd2)+len(uds))
+	for _, s := range obd2 {
 		d, err := dtc.Parse(s.code)
 		if err != nil {
 			continue // unreachable: the seed list is a constant
 		}
 		d.Module = s.module
 		d.Status = s.status
+		codes = append(codes, d)
+	}
+	for _, u := range uds {
+		d := dtc.DecodeUDS(u.a, u.b, u.failure, u.status)
+		d.Module = u.module
 		codes = append(codes, d)
 	}
 	return codes

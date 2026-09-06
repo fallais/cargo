@@ -37,6 +37,10 @@ const (
 	prompt = '>'
 )
 
+// defaultResponseTimeout is the adapter's power-on ATST value, restored after
+// a slower module has been queried.
+const defaultResponseTimeout byte = 0x32
+
 // baudRates are tried in order when probing an adapter. 38400 and 9600 are the
 // two an ELM327 ships with depending on the clone; the faster rates appear on
 // newer boards.
@@ -275,6 +279,47 @@ func (e *ELM327) SetHeader(ctx context.Context, addr uint16) error {
 // whose - so codes get attributed to the wrong module.
 func (e *ELM327) SetReceiveFilter(ctx context.Context, addr uint16) error {
 	_, err := e.Query(ctx, fmt.Sprintf("ATCRA%03X", addr))
+	return err
+}
+
+// SetFlowControl tells the adapter how to acknowledge a multi-frame reply.
+//
+// This is the step that makes UDS work on a non-standard address. A reply
+// longer than one CAN frame requires the tester to send a flow-control frame,
+// and the adapter builds that from its own defaults, which assume the
+// emissions addresses. Pointed at an ABS module those defaults are wrong, the
+// ECU never receives permission to continue, and the transfer stalls after the
+// first frame with no error to show for it.
+//
+// The data bytes are the standard "continue, unlimited block size, no minimum
+// separation" response.
+func (e *ELM327) SetFlowControl(ctx context.Context, requestID uint16) error {
+	for _, cmd := range []string{
+		fmt.Sprintf("ATFCSH%03X", requestID),
+		"ATFCSD300000",
+		"ATFCSM1", // use the header and data set above
+	} {
+		if _, err := e.Query(ctx, cmd); err != nil {
+			return fmt.Errorf("%s: %w", cmd, err)
+		}
+	}
+	return nil
+}
+
+// ClearFlowControl returns the adapter to building flow control itself.
+func (e *ELM327) ClearFlowControl(ctx context.Context) error {
+	_, err := e.Query(ctx, "ATFCSM0")
+	return err
+}
+
+// SetResponseTimeout sets how long the adapter waits for a reply, in units of
+// roughly four milliseconds.
+//
+// The default is tuned for OBD-II, where answers are immediate. A body module
+// gathering fault records can take far longer, and the adapter would otherwise
+// give up and report no data while the ECU was still composing its answer.
+func (e *ELM327) SetResponseTimeout(ctx context.Context, units byte) error {
+	_, err := e.Query(ctx, fmt.Sprintf("ATST%02X", units))
 	return err
 }
 

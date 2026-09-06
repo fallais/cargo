@@ -8,8 +8,11 @@ import "fmt"
 // 15765-4 assigns 0x7E0-0x7E7 for requests to the emissions-related units and
 // 0x7E8-0x7EF for their replies, and those are the only ones the OBD-II modes
 // are required to answer. Everything else - ABS, airbag, body, TPMS - sits at
-// manufacturer-chosen addresses and usually answers UDS service 0x19 rather
-// than mode 03, so scanning it with standard OBD-II is best-effort.
+// manufacturer-chosen addresses and answers UDS (ISO 14229-1) instead.
+//
+// Standard therefore selects the protocol as well as describing the module:
+// emissions units are read with OBD-II modes 03, 07 and 0A, the rest with UDS
+// service 0x19.
 type Module struct {
 	Name string
 	// Request is the CAN identifier we address (ATSH).
@@ -47,9 +50,9 @@ var StandardModules = []Module{
 // controllers. They are conventions rather than standards and vary by make, so
 // treat a non-answer as "not present at this address" rather than an error.
 //
-// Note that reaching one of these is only half the problem: most answer UDS
-// 0x19 (ReadDTCInformation), not OBD-II mode 03, so a reply here is not
-// guaranteed to be parseable by this tool.
+// These are read over UDS service 0x19. A module that turns out to answer the
+// OBD-II modes instead is handled by falling back, since the address
+// conventions and the protocol conventions do not always agree.
 var ExtendedModules = []Module{
 	{Name: "ABS", Request: 0x760, Response: 0x768},
 	{Name: "Airbag", Request: 0x740, Response: 0x748},

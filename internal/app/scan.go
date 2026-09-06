@@ -155,8 +155,11 @@ func report(ctx context.Context, provider obd.OBDProvider, resolver *dtc.Resolve
 	for _, module := range modules {
 		fmt.Printf("%s\n", module)
 		for _, c := range byModule[module] {
-			def := resolver.Describe(c)
-			fmt.Printf("  %-6s  %-10s  %s\n", c.Code, c.Status, def.Description)
+			description := resolver.Describe(c).Description
+			if failure := c.FailureTypeName(); failure != "" {
+				description = fmt.Sprintf("%s (%s)", description, failure)
+			}
+			fmt.Printf("  %-9s  %-10s  %s\n", c.FullCode(), c.Status, description)
 		}
 		fmt.Println()
 	}

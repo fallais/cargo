@@ -337,11 +337,17 @@ func (d *Displayer) renderDTCTable(codes []dtc.DTC) {
 
 		row := i + 1
 		d.dtcTable.SetCell(row, 0, tview.NewTableCell(shown).SetTextColor(tcell.ColorAqua))
-		d.dtcTable.SetCell(row, 1, tview.NewTableCell(code.Code).SetAttributes(tcell.AttrBold))
+		d.dtcTable.SetCell(row, 1, tview.NewTableCell(code.FullCode()).SetAttributes(tcell.AttrBold))
+		status := code.Status.String()
+		if code.WarningActive() {
+			// The ECU is asking for a warning lamp, which is as close as
+			// UDS comes to saying this one matters now.
+			status += " !"
+		}
 		d.dtcTable.SetCell(row, 2, tview.NewTableCell(
-			fmt.Sprintf("[%s]%s[white]", statusColour(code.Status), code.Status)).
+			fmt.Sprintf("[%s]%s[white]", statusColour(code.Status), status)).
 			SetExpansion(0))
-		d.dtcTable.SetCell(row, 3, tview.NewTableCell(def.Description).
+		d.dtcTable.SetCell(row, 3, tview.NewTableCell(describe(code, def)).
 			SetExpansion(1).
 			SetMaxWidth(64))
 		d.dtcTable.SetCell(row, 4, tview.NewTableCell(shortSource(def.Source)).
@@ -351,6 +357,17 @@ func (d *Displayer) renderDTCTable(codes []dtc.DTC) {
 	d.dtcSummary.SetText(fmt.Sprintf(
 		"[red]%d stored[white]   [yellow]%d pending[white]   [fuchsia]%d permanent[white]   across %d module(s)",
 		stored, pending, permanent, countModules(sorted)))
+}
+
+// describe combines the catalogued meaning of a code with what its failure
+// type adds. UDS codes name the component and the manner of its failure
+// separately, and both are needed before the fault is actionable.
+func describe(code dtc.DTC, def dtc.Definition) string {
+	failure := code.FailureTypeName()
+	if failure == "" {
+		return def.Description
+	}
+	return fmt.Sprintf("%s (%s)", def.Description, failure)
 }
 
 // shortSource abbreviates provenance to fit a narrow column while still

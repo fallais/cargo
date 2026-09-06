@@ -283,6 +283,9 @@ func (s *SerialOBD) GetDTCs(ctx context.Context) ([]dtc.DTC, error) {
 	if err := elm.ClearReceiveFilter(ctx); err != nil {
 		log.Warn("Restoring receive filter", zap.Error(err))
 	}
+	if err := elm.ClearFlowControl(ctx); err != nil {
+		log.Debug("Restoring flow control", zap.Error(err))
+	}
 	if err := elm.SetHeader(ctx, obd.Functional); err != nil {
 		log.Warn("Restoring broadcast header", zap.Error(err))
 	}
@@ -290,7 +293,21 @@ func (s *SerialOBD) GetDTCs(ctx context.Context) ([]dtc.DTC, error) {
 	return found, nil
 }
 
+// udsStatusMask asks for every code the module holds, letting the per-code
+// status byte decide what each one means rather than depending on the module
+// implementing the same mask bits as its neighbours.
+const udsStatusMask byte = 0xFF
+
+// udsResponseTimeout is roughly 400ms in the adapter's four-millisecond units.
+// Chassis and body modules answer far more slowly than the powertrain.
+const udsResponseTimeout byte = 0x64
+
 // readModule points the adapter at one ECU and reads its codes.
+//
+// Which protocol to use is decided by what the module is, not by trying both:
+// the emissions controllers answer the OBD-II modes, and everything else
+// speaks UDS. Asking an airbag module for mode 03 gets silence, and asking the
+// engine for UDS 0x19 disturbs it for no gain.
 func (s *SerialOBD) readModule(ctx context.Context, elm *ELM327, m obd.Module) ([]dtc.DTC, error) {
 	if err := elm.SetHeader(ctx, m.Request); err != nil {
 		return nil, fmt.Errorf("address %s: %w", m, err)
@@ -298,7 +315,46 @@ func (s *SerialOBD) readModule(ctx context.Context, elm *ELM327, m obd.Module) (
 	if err := elm.SetReceiveFilter(ctx, m.Response); err != nil {
 		return nil, fmt.Errorf("filter %s: %w", m, err)
 	}
-	return s.readModes(ctx, elm, m.Name)
+
+	if m.Standard {
+		return s.readModes(ctx, elm, m.Name)
+	}
+
+	// A non-standard address needs the adapter told how to acknowledge a
+	// multi-frame reply, and given longer to wait for one.
+	if err := elm.SetFlowControl(ctx, m.Request); err != nil {
+		return nil, fmt.Errorf("flow control %s: %w", m, err)
+	}
+	defer func() {
+		if err := elm.ClearFlowControl(ctx); err != nil {
+			log.Debug("Could not restore flow control", zap.Error(err))
+		}
+	}()
+
+	if err := elm.SetResponseTimeout(ctx, udsResponseTimeout); err != nil {
+		log.Debug("Could not extend the adapter timeout", zap.Error(err))
+	}
+	defer func() {
+		if err := elm.SetResponseTimeout(ctx, defaultResponseTimeout); err != nil {
+			log.Debug("Could not restore the adapter timeout", zap.Error(err))
+		}
+	}()
+
+	codes, err := s.readDTCsUDS(ctx, elm, m.Name, udsStatusMask)
+	if err == nil {
+		return codes, nil
+	}
+
+	// The address conventions and the protocol conventions do not always
+	// agree: a few makes put a body controller on a non-standard address
+	// that still answers the OBD-II modes. Falling back costs one request
+	// on a module that has already declined the first choice.
+	if errors.Is(err, ErrUDSNotSupported) {
+		log.Debug("Module rejected UDS, trying the OBD-II modes",
+			zap.String("module", m.Name))
+		return s.readModes(ctx, elm, m.Name)
+	}
+	return nil, err
 }
 
 // readModes asks one target for stored, pending and permanent codes.
