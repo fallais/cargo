@@ -215,3 +215,48 @@ func ParseDTCs(response string, mode byte, status dtc.Status) ([]dtc.DTC, error)
 
 	return codes, nil
 }
+
+// ParseVIN decodes a mode 09 PID 02 reply.
+//
+// The VIN arrives as ASCII across several CAN frames. Some ECUs pad the front
+// of the payload to a frame boundary and some prefix a data-item count, so
+// rather than trusting a fixed offset this keeps the characters a VIN may
+// legally contain and checks the length at the end.
+func ParseVIN(response string) (string, error) {
+	if err := responseError(response); err != nil {
+		return "", err
+	}
+
+	data, err := normalizeHex(response)
+	if err != nil {
+		return "", err
+	}
+
+	rest, ok := payload(data, 0x09)
+	if !ok {
+		return "", fmt.Errorf("%w: no mode 09 reply in %q", ErrParse, response)
+	}
+	if len(rest) < 2 || rest[0] != 0x02 {
+		return "", fmt.Errorf("%w: mode 09 reply is not for PID 02", ErrParse)
+	}
+
+	var vin strings.Builder
+	for _, b := range rest[1:] {
+		// Printable ASCII only; the padding is NUL or 0xFF and the
+		// leading data-item count is a small integer.
+		if b >= '0' && b <= '9' || b >= 'A' && b <= 'Z' {
+			vin.WriteByte(b)
+		}
+	}
+
+	s := vin.String()
+	// A padded reply can carry the count byte through as a digit, so take
+	// the trailing 17 characters rather than the leading ones.
+	if len(s) > 17 {
+		s = s[len(s)-17:]
+	}
+	if len(s) != 17 {
+		return "", fmt.Errorf("%w: recovered %d VIN characters from %q", ErrParse, len(s), response)
+	}
+	return s, nil
+}

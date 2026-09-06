@@ -13,13 +13,15 @@ go build -o cargo .
 The UI starts whether or not an adapter is attached, and connects on its own
 once one appears.
 
+Keys: `1` dashboard, `2` trouble codes, `3` vehicle, `q` quit.
+
 ## Flags
 
 | | |
 |---|---|
 | `--port` | adapter device (default: scan `ttyUSB*`, `ttyACM*`, `rfcomm*`) |
 | `--baud` | serial rate (default: probe 38400, 9600, 115200, 230400, 500000) |
-| `--make` | vehicle marque, to disambiguate manufacturer codes |
+| `--make` | vehicle marque, overriding the selected vehicle for one run |
 | `--mock` | simulated vehicle |
 | `--no-tui` | print one report and exit |
 | `--debug` | verbose logging |
@@ -39,6 +41,17 @@ Descriptions come from an embedded catalog of ~18,000 definitions. A code with
 no entry is still described from its own encoding rather than reported as
 unknown, and manufacturer codes that several marques define differently ask for
 `--make` instead of guessing.
+
+## Vehicle
+
+Around 700 manufacturer codes mean different things on different marques, so
+the tool needs to know which car it is attached to. The vehicle page (`3`)
+keeps a garage of profiles and applies the selected one to every lookup.
+
+Press `v` and it reads the VIN from the car (mode 09 PID 02), decodes the
+manufacturer and model year, and saves the profile. Where the VIN is not
+available, which is common before the 2005 model year, press `m` and pick the
+make. The choice persists in `$XDG_CONFIG_HOME/cargo/garage.json`.
 
 Rebuild the catalog from the upstream datasets with:
 

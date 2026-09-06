@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -291,4 +292,36 @@ func (r *Resolver) derive(d DTC) Definition {
 		Description: d.Describe(),
 		Source:      "derived from encoding",
 	}
+}
+
+// Makes returns every marque the built-in catalog can distinguish.
+func Makes() ([]string, error) {
+	c, err := Builtin()
+	if err != nil {
+		return nil, err
+	}
+
+	layered, ok := c.(Layered)
+	if !ok {
+		return nil, nil
+	}
+
+	seen := make(map[string]struct{})
+	var makes []string
+	for _, layer := range layered {
+		ix, ok := layer.(*Indexed)
+		if !ok {
+			continue
+		}
+		for _, m := range ix.Makes() {
+			if _, dup := seen[m]; dup {
+				continue
+			}
+			seen[m] = struct{}{}
+			makes = append(makes, m)
+		}
+	}
+
+	sort.Strings(makes)
+	return makes, nil
 }

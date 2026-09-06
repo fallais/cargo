@@ -174,3 +174,28 @@ func (ix *Indexed) LookupAll(code string) []Definition {
 
 // Len reports how many records the catalog holds.
 func (ix *Indexed) Len() int { return len(ix.starts) }
+
+// Makes returns the distinct marques the catalog holds definitions for, in
+// sorted order. The vehicle picker uses it so the list offers only makes that
+// actually change an answer.
+func (ix *Indexed) Makes() []string {
+	if !ix.hasMake {
+		return nil
+	}
+
+	seen := make(map[string]struct{})
+	for i := range ix.starts {
+		_, make, _, err := splitRecord(string(ix.line(i)), true)
+		if err != nil || make == "" {
+			continue
+		}
+		seen[make] = struct{}{}
+	}
+
+	makes := make([]string, 0, len(seen))
+	for m := range seen {
+		makes = append(makes, m)
+	}
+	sort.Strings(makes)
+	return makes
+}

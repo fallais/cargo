@@ -125,6 +125,16 @@ func (m *MockOBD) IsConnected() bool {
 
 func (m *MockOBD) Description() string { return "mock vehicle" }
 
+// GetVIN returns a well-formed VIN, check digit included, so the picker and
+// the decoding behind it can be exercised without a car.
+//
+// It decodes to a 2008 Ford, chosen because the seeded fault list includes a
+// code that Ford and GM define incompatibly. Selecting the vehicle visibly
+// changes what that code means, which is the whole point of the feature.
+func (m *MockOBD) GetVIN(context.Context) (string, error) {
+	return "1FAHP35N58W123456", nil
+}
+
 func (m *MockOBD) GetRPM(context.Context) (int, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

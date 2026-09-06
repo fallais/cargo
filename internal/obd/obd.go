@@ -20,6 +20,11 @@ type OBDProvider interface {
 	// Description identifies what we are talking to, for the status line.
 	Description() string
 
+	// GetVIN reads the vehicle identification number (mode 09 PID 02).
+	// It is what lets the tool identify the car itself rather than asking,
+	// which matters because the make decides how manufacturer codes read.
+	GetVIN(ctx context.Context) (string, error)
+
 	GetRPM(ctx context.Context) (int, error)
 	GetCoolantTemp(ctx context.Context) (float64, error)
 	GetOilTemp(ctx context.Context) (float64, error)

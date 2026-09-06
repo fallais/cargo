@@ -9,6 +9,7 @@ import (
 
 	"cargo/internal/dtc"
 	"cargo/internal/obd"
+	"cargo/internal/vehicle"
 	"cargo/pkg/log"
 
 	"github.com/gdamore/tcell/v2"
@@ -46,7 +47,12 @@ type Displayer struct {
 	app      *tview.Application
 	pages    *tview.Pages
 	provider obd.OBDProvider
-	resolver *dtc.Resolver
+	// baseResolver has no make applied; resolver is it narrowed to the
+	// active vehicle. Both are only touched on the UI goroutine.
+	baseResolver *dtc.Resolver
+	resolver     *dtc.Resolver
+	garage       *vehicle.Garage
+	makes        []string
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -64,22 +70,37 @@ type Displayer struct {
 	helpText    *tview.TextView
 	dtcTable    *tview.Table
 	dtcSummary  *tview.TextView
+	vehicleList *tview.List
+	vehicleInfo *tview.TextView
+	flashText   *tview.TextView
 }
 
-func New(provider obd.OBDProvider, resolver *dtc.Resolver) *Displayer {
+func New(provider obd.OBDProvider, resolver *dtc.Resolver, garage *vehicle.Garage, makes []string) *Displayer {
 	ctx, cancel := context.WithCancel(context.Background())
 
+	if garage == nil {
+		garage = &vehicle.Garage{}
+	}
+
 	d := &Displayer{
-		app:      tview.NewApplication(),
-		pages:    tview.NewPages(),
-		provider: provider,
-		resolver: resolver,
-		ctx:      ctx,
-		cancel:   cancel,
-		stateMu:  make(chan struct{}, 1),
+		app:          tview.NewApplication(),
+		pages:        tview.NewPages(),
+		provider:     provider,
+		baseResolver: resolver,
+		resolver:     resolver,
+		garage:       garage,
+		makes:        makes,
+		ctx:          ctx,
+		cancel:       cancel,
+		stateMu:      make(chan struct{}, 1),
 	}
 	d.state.errs = map[string]error{}
 	d.stateMu <- struct{}{}
+
+	// A vehicle chosen in a previous session applies from the first frame.
+	if active, ok := garage.Active(); ok && active.Make != "" {
+		d.resolver = resolver.WithMake(active.Make)
+	}
 	return d
 }
 
@@ -100,8 +121,8 @@ func (d *Displayer) Run() error {
 	d.statusText = tview.NewTextView().SetTextAlign(tview.AlignCenter).SetDynamicColors(true)
 	d.helpText = tview.NewTextView().
 		SetTextAlign(tview.AlignCenter).
-		SetDynamicColors(true).
-		SetText("[::b]1[::-] Dashboard   [::b]2[::-] Trouble codes   [::b]r[::-] Rescan   [::b]q[::-] Quit")
+		SetDynamicColors(true)
+	d.flashText = tview.NewTextView().SetDynamicColors(true)
 
 	header := tview.NewFlex().SetDirection(tview.FlexRow)
 	header.AddItem(title, 1, 0, false)
@@ -110,10 +131,14 @@ func (d *Displayer) Run() error {
 
 	d.pages.AddPage("dashboard", d.buildDashboard(), true, true)
 	d.pages.AddPage("dtc", d.buildDTC(), true, false)
+	d.pages.AddPage("vehicle", d.buildVehicle(), true, false)
 
 	root := tview.NewFlex().SetDirection(tview.FlexRow)
 	root.AddItem(header, 3, 0, false)
 	root.AddItem(d.pages, 0, 1, true)
+	root.AddItem(d.flashText, 1, 0, false)
+
+	d.paintHelp("dashboard")
 
 	d.app.SetRoot(root, true)
 	d.app.SetInputCapture(d.onKey)
@@ -125,21 +150,59 @@ func (d *Displayer) Run() error {
 }
 
 func (d *Displayer) onKey(event *tcell.EventKey) *tcell.EventKey {
+	// While the make picker is up it owns the keyboard, or typing "m" to
+	// filter would be read as a command.
+	if name, _ := d.pages.GetFrontPage(); name == makePickerPage {
+		return event
+	}
+
 	switch event.Rune() {
 	case 'q', 'Q':
 		d.Shutdown()
 		return nil
 	case '1':
-		d.pages.SwitchToPage("dashboard")
+		d.showPage("dashboard")
 		return nil
 	case '2':
-		d.pages.SwitchToPage("dtc")
+		d.showPage("dtc")
+		return nil
+	case '3':
+		d.showPage("vehicle")
 		return nil
 	case 'r', 'R':
 		go d.refreshDTCs()
 		return nil
 	}
+
+	if name, _ := d.pages.GetFrontPage(); name == "vehicle" {
+		return d.onVehicleKey(event)
+	}
 	return event
+}
+
+// showPage switches page and updates the key hints, which differ per page.
+func (d *Displayer) showPage(name string) {
+	d.pages.SwitchToPage(name)
+	d.paintHelp(name)
+}
+
+func (d *Displayer) paintHelp(page string) {
+	common := "[::b]1[::-] Dashboard  [::b]2[::-] Codes  [::b]3[::-] Vehicle  [::b]q[::-] Quit"
+	switch page {
+	case "dtc":
+		common = "[::b]r[::-] Rescan   " + common
+	case "vehicle":
+		common = "[::b]v[::-] Read VIN  [::b]m[::-] Make  [::b]n[::-] Add  [::b]x[::-] Remove   " + common
+	}
+	d.helpText.SetText(common)
+}
+
+// flash shows a transient message under the page.
+func (d *Displayer) flash(message string) {
+	if d.flashText == nil {
+		return
+	}
+	d.flashText.SetText(" " + message + "[white]")
 }
 
 func (d *Displayer) Shutdown() {
@@ -396,7 +459,11 @@ func (d *Displayer) paintDashboard(s snapshot) {
 	if s.connected {
 		status = "[green]connected[white]"
 	}
-	d.statusText.SetText(fmt.Sprintf("%s - %s", status, d.provider.Description()))
+	line := fmt.Sprintf("%s - %s", status, d.provider.Description())
+	if make := d.codeMake(); make != "" {
+		line += fmt.Sprintf("  [aqua][%s][white]", make)
+	}
+	d.statusText.SetText(line)
 }
 
 // pollDTCs rescans the modules on a slow cadence.

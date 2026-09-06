@@ -66,7 +66,11 @@ makes**:
 
 A flat `code,description` table has to pick one, and picking wrong sends
 someone to replace the wrong part. So manufacturer rows carry their make, and
-with no `--make` set the resolver reports the ambiguity instead of choosing.
+with no make selected the resolver reports the ambiguity instead of choosing.
+
+The make normally comes from the vehicle itself. The VIN read over mode 09
+PID 02 resolves to a marque through its world manufacturer identifier, so the
+user is only asked when the car cannot answer.
 
 Sorting is what makes the CSV choice free at runtime. Against a full 28k-row
 catalog:

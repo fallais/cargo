@@ -198,6 +198,14 @@ func pid[T any](ctx context.Context, s *SerialOBD, cmd string, decode func(strin
 	return decode(resp)
 }
 
+// GetVIN reads the vehicle identification number.
+//
+// Not every vehicle answers: mode 09 is only mandatory from the 2005 model
+// year, so a miss here is ordinary and the caller falls back to asking.
+func (s *SerialOBD) GetVIN(ctx context.Context) (string, error) {
+	return pid(ctx, s, "0902", ParseVIN)
+}
+
 func (s *SerialOBD) GetRPM(ctx context.Context) (int, error) {
 	return pid(ctx, s, obd.PIDEngineRPM.String(), ParseRPM)
 }

@@ -17,6 +17,7 @@ import (
 	"cargo/internal/obd"
 	"cargo/internal/obd/mock"
 	"cargo/internal/obd/serial"
+	"cargo/internal/vehicle"
 	"cargo/pkg/log"
 
 	"go.uber.org/zap"
@@ -44,8 +45,31 @@ func Scan(ctx context.Context, opts ScanOptions) error {
 	if err != nil {
 		return fmt.Errorf("load trouble-code catalog: %w", err)
 	}
-	if opts.Make != "" {
-		resolver = resolver.WithMake(opts.Make)
+
+	makes, err := dtc.Makes()
+	if err != nil {
+		return fmt.Errorf("list catalog makes: %w", err)
+	}
+
+	garage, err := vehicle.Load(vehicle.GaragePath())
+	if err != nil {
+		// A corrupt garage should not stop the tool working; the user can
+		// pick the vehicle again.
+		log.Warn("Could not read the saved garage", zap.Error(err))
+		garage = &vehicle.Garage{}
+	}
+
+	// An explicit --make wins over the saved vehicle for this run, without
+	// being written back: a one-off override should not silently rewrite
+	// what the user configured.
+	make := opts.Make
+	if make == "" {
+		if active, ok := garage.Active(); ok {
+			make = active.Make
+		}
+	}
+	if make != "" {
+		resolver = resolver.WithMake(make)
 	}
 
 	provider := newProvider(opts)
@@ -71,7 +95,7 @@ func Scan(ctx context.Context, opts ScanOptions) error {
 		log.Info("Starting without a vehicle; will connect when one appears",
 			zap.NamedError("reason", startErr))
 	}
-	return displayer.New(provider, resolver).Run()
+	return displayer.New(provider, resolver, garage, makes).Run()
 }
 
 func newProvider(opts ScanOptions) obd.OBDProvider {
