@@ -281,14 +281,14 @@ func (d *Displayer) chooseMake() {
 // centred puts a primitive in the middle of the screen at a fixed size.
 func centred(p tview.Primitive, width, height int) tview.Primitive {
 	row := tview.NewFlex().SetDirection(tview.FlexRow)
-	row.AddItem(nil, 0, 1, false)
+	row.AddItem(spacer(), 0, 1, false)
 	row.AddItem(p, height, 0, true)
-	row.AddItem(nil, 0, 1, false)
+	row.AddItem(spacer(), 0, 1, false)
 
 	col := tview.NewFlex()
-	col.AddItem(nil, 0, 1, false)
+	col.AddItem(spacer(), 0, 1, false)
 	col.AddItem(row, width, 0, true)
-	col.AddItem(nil, 0, 1, false)
+	col.AddItem(spacer(), 0, 1, false)
 	return col
 }
 

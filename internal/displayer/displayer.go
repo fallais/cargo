@@ -119,6 +119,8 @@ func (d *Displayer) lock()   { <-d.stateMu }
 func (d *Displayer) unlock() { d.stateMu <- struct{}{} }
 
 func (d *Displayer) Run() error {
+	applyTheme()
+
 	d.brand = tview.NewTextView().SetDynamicColors(true).SetText(wordmark)
 
 	d.statusText = tview.NewTextView().
@@ -149,6 +151,14 @@ func (d *Displayer) Run() error {
 
 	d.app.SetRoot(root, true)
 	d.app.SetInputCapture(d.onKey)
+
+	// Paint the whole screen before each frame. Layout rounding and any
+	// region a primitive does not cover would otherwise keep the
+	// terminal's own background, which is what showed at the edges.
+	d.app.SetBeforeDrawFunc(func(screen tcell.Screen) bool {
+		screen.Fill(' ', tcell.StyleDefault.Background(theme.background))
+		return false
+	})
 
 	go d.pollLive()
 	go d.pollDTCs()
