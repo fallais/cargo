@@ -4,10 +4,11 @@ package cmd
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 
-	"github.com/fallais/cargo/pkg/log"
+	"github.com/fallais/cargo/internal/app"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -65,7 +66,7 @@ func init() {
 }
 
 func initConfig() {
-	log.InitLogger(viper.GetBool("debug"))
+	app.InitLogging(viper.GetBool("debug"))
 
 	if path := viper.GetString("config"); path != "" {
 		viper.SetConfigFile(path)
@@ -85,7 +86,7 @@ func initConfig() {
 	if err := viper.ReadInConfig(); err != nil {
 		var notFound viper.ConfigFileNotFoundError
 		if !isNotFound(err, &notFound) {
-			log.Warn("Ignoring unreadable config file")
+			slog.Warn("Ignoring unreadable config file")
 		}
 	}
 }
@@ -94,7 +95,7 @@ func initConfig() {
 // failure, so callers do not have to.
 func Execute() {
 	err := rootCmd.Execute()
-	log.Sync()
+	app.CloseLog()
 
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "cargo:", err)

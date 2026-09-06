@@ -14,9 +14,7 @@ import (
 	"time"
 
 	"github.com/fallais/cargo/internal/dtc"
-	"github.com/fallais/cargo/pkg/log"
-
-	"go.uber.org/zap"
+	"log/slog"
 )
 
 // Options control an import run.
@@ -79,15 +77,15 @@ func Run(ctx context.Context, opts Options) (*Result, error) {
 		if err != nil {
 			// One unreachable file should not sink an import that can
 			// still produce a usable catalog from the rest.
-			log.Warn("Skipping source", zap.String("source", source.Name), zap.Error(err))
+			slog.Warn("Skipping source", "source", source.Name, "error", err)
 			result.Skipped++
 			continue
 		}
 
 		records, err := source.Parse(data)
 		if err != nil {
-			log.Warn("Skipping unparseable source",
-				zap.String("source", source.Name), zap.Error(err))
+			slog.Warn("Skipping unparseable source",
+				"source", source.Name, "error", err)
 			result.Skipped++
 			continue
 		}
@@ -208,7 +206,7 @@ func fetch(ctx context.Context, source Source, opts Options) ([]byte, error) {
 		return nil, err
 	}
 	if err := os.WriteFile(path, data, 0o644); err != nil {
-		log.Warn("Could not cache source", zap.String("path", path), zap.Error(err))
+		slog.Warn("Could not cache source", "path", path, "error", err)
 	}
 	return data, nil
 }

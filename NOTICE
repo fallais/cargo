@@ -1,14 +1,7 @@
-cargo
-Copyright (c) 2026 the cargo contributors
+cargo bundles third-party diagnostic trouble code data.
 
-This product includes third-party data and software, listed below.
-
-
-THIRD-PARTY DATA
-================
-
-The diagnostic trouble code catalog in internal/dtc/data/ is not original
-work. It is assembled by "cargo import" from the following datasets.
+The catalog in internal/dtc/data/ is not original work. It is assembled by
+"cargo import" from these datasets:
 
   Wal33D/dtc-database
   https://github.com/Wal33D/dtc-database
@@ -22,28 +15,14 @@ work. It is assembled by "cargo import" from the following datasets.
 
 Both are MIT licensed and compatible with this project's terms.
 
-A note on scope: an MIT grant from a dataset's maintainer covers their
-compilation. It does not settle the rights to the underlying definitions,
-which these projects gathered from sources they do not identify. The
-authoritative definitions live in SAE J2012, a paid standard, and every
-freely available list is downstream of it. Manufacturer-specific codes are
-more restricted still, as J2012 reserves the ranges but the meanings belong
-to each marque's service documentation.
+An MIT grant from a dataset's maintainer covers their compilation. It does not
+settle the rights to the underlying definitions, which these projects gathered
+from sources they do not identify. The authoritative definitions live in SAE
+J2012, a paid standard, and every freely available list is downstream of it.
+Manufacturer-specific codes are more restricted still: J2012 reserves the
+ranges, but the meanings belong to each marque's service documentation.
 
 Treat the catalog as a helpful index rather than an authority. Descriptions
-carry their source through to the display, manufacturer codes are tagged
-with the make that defined them, and an unmatched code falls back to what
-its encoding proves rather than to a guess.
-
-
-THIRD-PARTY SOFTWARE
-====================
-
-  github.com/gdamore/tcell        Apache-2.0
-  github.com/rivo/tview           MIT
-  github.com/spf13/cobra          Apache-2.0
-  github.com/spf13/viper          MIT
-  github.com/tarm/serial          BSD-3-Clause
-  go.uber.org/zap                 MIT
-
-Full terms are in each module's own repository.
+carry their source through to the display, manufacturer codes are tagged with
+the make that defined them, and an unmatched code falls back to what its
+encoding proves rather than to a guess.

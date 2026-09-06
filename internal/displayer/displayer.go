@@ -10,11 +10,10 @@ import (
 	"github.com/fallais/cargo/internal/dtc"
 	"github.com/fallais/cargo/internal/obd"
 	"github.com/fallais/cargo/internal/vehicle"
-	"github.com/fallais/cargo/pkg/log"
+	"log/slog"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
-	"go.uber.org/zap"
 )
 
 // pollInterval is how often live values are re-read. Each refresh is several
@@ -506,7 +505,7 @@ func (d *Displayer) refreshDTCs() {
 
 	codes, err := d.provider.GetDTCs(ctx)
 	if err != nil {
-		log.Debug("Trouble-code scan failed", zap.Error(err))
+		slog.Debug("Trouble-code scan failed", "error", err)
 		return
 	}
 

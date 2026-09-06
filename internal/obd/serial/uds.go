@@ -6,9 +6,7 @@ import (
 	"fmt"
 
 	"github.com/fallais/cargo/internal/dtc"
-	"github.com/fallais/cargo/pkg/log"
-
-	"go.uber.org/zap"
+	"log/slog"
 )
 
 // UDS (ISO 14229-1) service and sub-function identifiers.
@@ -170,8 +168,8 @@ func (s *SerialOBD) readDTCsUDS(ctx context.Context, elm *ELM327, module string,
 		return nil, err
 	}
 
-	log.Debug("Retrying in an extended diagnostic session",
-		zap.String("module", module), zap.Error(err))
+	slog.Debug("Retrying in an extended diagnostic session",
+		"module", module, "error", err)
 
 	if sessionErr := setSession(ctx, elm, sessionExtended); sessionErr != nil {
 		return nil, err // report the original refusal, not the retry's
@@ -179,8 +177,8 @@ func (s *SerialOBD) readDTCsUDS(ctx context.Context, elm *ELM327, module string,
 	// Leave the ECU as we found it whether or not the read succeeds.
 	defer func() {
 		if err := setSession(ctx, elm, sessionDefault); err != nil {
-			log.Debug("Could not restore the default session",
-				zap.String("module", module), zap.Error(err))
+			slog.Debug("Could not restore the default session",
+				"module", module, "error", err)
 		}
 	}()
 

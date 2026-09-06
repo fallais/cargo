@@ -9,9 +9,7 @@ import (
 
 	"github.com/fallais/cargo/internal/dtc"
 	"github.com/fallais/cargo/internal/obd"
-	"github.com/fallais/cargo/pkg/log"
-
-	"go.uber.org/zap"
+	"log/slog"
 )
 
 // dtcModes are the three questions worth asking each module, and what an
@@ -131,7 +129,7 @@ func (s *SerialOBD) supervise(ctx context.Context) {
 				continue
 			}
 			if err := s.attempt(ctx); err == nil {
-				log.Info("Adapter connected")
+				slog.Info("Adapter connected")
 			}
 		}
 	}
@@ -158,7 +156,7 @@ func (s *SerialOBD) Stop() {
 	}
 	if elm != nil {
 		if err := elm.Close(); err != nil {
-			log.Warn("Closing adapter", zap.Error(err))
+			slog.Warn("Closing adapter", "error", err)
 		}
 	}
 }
@@ -278,8 +276,8 @@ func (s *SerialOBD) GetDTCs(ctx context.Context) ([]dtc.DTC, error) {
 		if err != nil {
 			// A module that is not fitted, or that speaks a protocol we
 			// do not, is an ordinary outcome on a scan across makes.
-			log.Debug("Module did not answer",
-				zap.String("module", module.String()), zap.Error(err))
+			slog.Debug("Module did not answer",
+				"module", module.String(), "error", err)
 			continue
 		}
 
@@ -293,18 +291,18 @@ func (s *SerialOBD) GetDTCs(ctx context.Context) ([]dtc.DTC, error) {
 		s.modules = present
 		s.scanned = true
 		s.mu.Unlock()
-		log.Info("Module scan complete",
-			zap.Int("responding", len(present)), zap.Int("probed", len(modules)))
+		slog.Info("Module scan complete",
+			"responding", len(present), "probed", len(modules))
 	}
 
 	if err := elm.ClearReceiveFilter(ctx); err != nil {
-		log.Warn("Restoring receive filter", zap.Error(err))
+		slog.Warn("Restoring receive filter", "error", err)
 	}
 	if err := elm.ClearFlowControl(ctx); err != nil {
-		log.Debug("Restoring flow control", zap.Error(err))
+		slog.Debug("Restoring flow control", "error", err)
 	}
 	if err := elm.SetHeader(ctx, obd.Functional); err != nil {
-		log.Warn("Restoring broadcast header", zap.Error(err))
+		slog.Warn("Restoring broadcast header", "error", err)
 	}
 
 	return found, nil
@@ -344,16 +342,16 @@ func (s *SerialOBD) readModule(ctx context.Context, elm *ELM327, m obd.Module) (
 	}
 	defer func() {
 		if err := elm.ClearFlowControl(ctx); err != nil {
-			log.Debug("Could not restore flow control", zap.Error(err))
+			slog.Debug("Could not restore flow control", "error", err)
 		}
 	}()
 
 	if err := elm.SetResponseTimeout(ctx, udsResponseTimeout); err != nil {
-		log.Debug("Could not extend the adapter timeout", zap.Error(err))
+		slog.Debug("Could not extend the adapter timeout", "error", err)
 	}
 	defer func() {
 		if err := elm.SetResponseTimeout(ctx, defaultResponseTimeout); err != nil {
-			log.Debug("Could not restore the adapter timeout", zap.Error(err))
+			slog.Debug("Could not restore the adapter timeout", "error", err)
 		}
 	}()
 
@@ -367,8 +365,8 @@ func (s *SerialOBD) readModule(ctx context.Context, elm *ELM327, m obd.Module) (
 	// that still answers the OBD-II modes. Falling back costs one request
 	// on a module that has already declined the first choice.
 	if errors.Is(err, ErrUDSNotSupported) {
-		log.Debug("Module rejected UDS, trying the OBD-II modes",
-			zap.String("module", m.Name))
+		slog.Debug("Module rejected UDS, trying the OBD-II modes",
+			"module", m.Name)
 		return s.readModes(ctx, elm, m.Name)
 	}
 	return nil, err
@@ -401,11 +399,11 @@ func (s *SerialOBD) readModes(ctx context.Context, elm *ELM327, module string) (
 			}
 			// Mode 0A is not implemented on every ECU; a malformed
 			// answer there is not worth failing the whole module for.
-			log.Debug("Unparseable trouble-code reply",
-				zap.String("module", module),
-				zap.Uint8("mode", m.mode),
-				zap.String("response", resp),
-				zap.Error(err))
+			slog.Debug("Unparseable trouble-code reply",
+				"module", module,
+				"mode", m.mode,
+				"response", resp,
+				"error", err)
 			continue
 		}
 
@@ -446,7 +444,7 @@ func (s *SerialOBD) ClearDTCs(ctx context.Context) error {
 		return fmt.Errorf("%w: mode 04 returned %q", ErrParse, resp)
 	}
 
-	log.Info("Stored trouble codes cleared")
+	slog.Info("Stored trouble codes cleared")
 	return nil
 }
 
@@ -480,7 +478,7 @@ func (s *SerialOBD) noteQueryFailure(err error) {
 
 	if elm != nil {
 		elm.Close()
-		log.Warn("Adapter link lost, will retry", zap.Error(err))
+		slog.Warn("Adapter link lost, will retry", "error", err)
 	}
 }
 

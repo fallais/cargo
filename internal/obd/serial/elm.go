@@ -10,10 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/fallais/cargo/pkg/log"
+	"log/slog"
 
 	"github.com/tarm/serial"
-	"go.uber.org/zap"
 )
 
 // AT commands. ELM327 configuration is all "AT" prefixed; anything else is
@@ -130,7 +129,7 @@ func Open(ctx context.Context, opts Options) (*ELM327, error) {
 			if err != nil {
 				// A device that is absent or busy fails the same way
 				// at every rate, so move to the next device.
-				log.Debug("Port unavailable", zap.String("port", name), zap.Error(err))
+				slog.Debug("Port unavailable", "port", name, "error", err)
 				lastOpenErr = err
 				break
 			}
@@ -144,16 +143,16 @@ func Open(ctx context.Context, opts Options) (*ELM327, error) {
 			}
 
 			if err := e.initialise(ctx, opts.ReadTimeout); err != nil {
-				log.Debug("Not an ELM327 at this rate",
-					zap.String("port", name), zap.Int("baud", baud), zap.Error(err))
+				slog.Debug("Not an ELM327 at this rate",
+					"port", name, "baud", baud, "error", err)
 				port.Close()
 				continue
 			}
 
-			log.Info("Adapter ready",
-				zap.String("port", e.portName),
-				zap.Int("baud", e.baudRate),
-				zap.String("protocol", e.ProtocolName()))
+			slog.Info("Adapter ready",
+				"port", e.portName,
+				"baud", e.baudRate,
+				"protocol", e.ProtocolName())
 			return e, nil
 		}
 	}
@@ -205,7 +204,7 @@ func (e *ELM327) initialise(ctx context.Context, timeout time.Duration) error {
 	// rather than letting every later query time out.
 	if resp, err := e.query(ctx, cmdReadVoltage, timeout); err == nil {
 		if v, err := ParseVoltage(resp); err == nil {
-			log.Info("Adapter supply voltage", zap.Float64("volts", v))
+			slog.Info("Adapter supply voltage", "volts", v)
 			if v < 6.0 {
 				return fmt.Errorf("%w: %.1fV", ErrLowVoltage, v)
 			}
@@ -237,7 +236,7 @@ func (e *ELM327) Negotiate(ctx context.Context) error {
 	e.protocol = strings.TrimPrefix(strings.TrimSpace(resp), "A")
 	e.mu.Unlock()
 
-	log.Info("Bus protocol negotiated", zap.String("protocol", e.ProtocolName()))
+	slog.Info("Bus protocol negotiated", "protocol", e.ProtocolName())
 	return nil
 }
 
@@ -402,7 +401,7 @@ func (e *ELM327) query(ctx context.Context, cmd string, timeout time.Duration) (
 		return resp, fmt.Errorf("%q: %w", cmd, err)
 	}
 
-	log.Debug("Adapter exchange", zap.String("command", cmd), zap.String("response", resp))
+	slog.Debug("Adapter exchange", "command", cmd, "response", resp)
 	return resp, nil
 }
 

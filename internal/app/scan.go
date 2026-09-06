@@ -5,6 +5,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -18,9 +19,6 @@ import (
 	"github.com/fallais/cargo/internal/obd/mock"
 	"github.com/fallais/cargo/internal/obd/serial"
 	"github.com/fallais/cargo/internal/vehicle"
-	"github.com/fallais/cargo/pkg/log"
-
-	"go.uber.org/zap"
 )
 
 // ScanOptions is everything the scan needs. Passing a struct rather than
@@ -42,12 +40,12 @@ func Scan(ctx context.Context, opts ScanOptions) error {
 	// display until the next full repaint. This has to come first: setting
 	// up the provider logs, and that line alone was enough to show.
 	if !opts.NoTUI {
-		path, err := log.InitFileLogger(opts.Debug, LogPath())
+		path, err := LogToFile(opts.Debug, LogPath())
 		if err != nil {
 			// Keep going without a log rather than refusing to start, but
 			// say so while stderr is still ours.
 			fmt.Fprintf(os.Stderr, "cargo: logging disabled: %v\n", err)
-			log.Discard()
+			DiscardLogging()
 		} else {
 			fmt.Fprintf(os.Stderr, "cargo: logging to %s\n", path)
 		}
@@ -72,7 +70,7 @@ func Scan(ctx context.Context, opts ScanOptions) error {
 	if err != nil {
 		// A corrupt garage should not stop the tool working; the user can
 		// pick the vehicle again.
-		log.Warn("Could not read the saved garage", zap.Error(err))
+		slog.Warn("Could not read the saved garage", "error", err)
 		garage = &vehicle.Garage{}
 	}
 
@@ -109,15 +107,15 @@ func Scan(ctx context.Context, opts ScanOptions) error {
 	}
 
 	if startErr != nil {
-		log.Info("Starting without a vehicle; will connect when one appears",
-			zap.NamedError("reason", startErr))
+		slog.Info("Starting without a vehicle; will connect when one appears",
+			"reason", startErr)
 	}
 	return displayer.New(provider, resolver, garage, makes).Run()
 }
 
 func newProvider(opts ScanOptions) obd.OBDProvider {
 	if opts.Mock {
-		log.Info("Using the simulated vehicle")
+		slog.Info("Using the simulated vehicle")
 		return mock.New()
 	}
 
@@ -126,15 +124,6 @@ func newProvider(opts ScanOptions) obd.OBDProvider {
 		Baud:        opts.Baud,
 		ReadTimeout: opts.Timeout,
 	})
-}
-
-// LogPath is where the UI writes its log, since it cannot use the terminal.
-func LogPath() string {
-	dir, err := os.UserCacheDir()
-	if err != nil {
-		return filepath.Join(os.TempDir(), "cargo.log")
-	}
-	return filepath.Join(dir, "cargo", "cargo.log")
 }
 
 // UserCatalogPath is where an owner can drop definitions for their own

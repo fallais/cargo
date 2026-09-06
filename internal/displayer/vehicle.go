@@ -6,11 +6,10 @@ import (
 	"time"
 
 	"github.com/fallais/cargo/internal/vehicle"
-	"github.com/fallais/cargo/pkg/log"
+	"log/slog"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
-	"go.uber.org/zap"
 )
 
 // The vehicle page is where the user says which car this is.
@@ -187,7 +186,7 @@ func (d *Displayer) applyVehicle() {
 
 func (d *Displayer) saveGarage() {
 	if err := d.garage.Save(); err != nil {
-		log.Warn("Could not save the garage", zap.Error(err))
+		slog.Warn("Could not save the garage", "error", err)
 		d.flash("[red]Could not save: " + err.Error())
 	}
 }
