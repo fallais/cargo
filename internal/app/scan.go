@@ -16,7 +16,6 @@ import (
 	"github.com/fallais/cargo/internal/displayer"
 	"github.com/fallais/cargo/internal/dtc"
 	"github.com/fallais/cargo/internal/obd"
-	"github.com/fallais/cargo/internal/obd/mock"
 	"github.com/fallais/cargo/internal/obd/serial"
 	"github.com/fallais/cargo/internal/vehicle"
 )
@@ -25,8 +24,8 @@ import (
 // reading viper in here keeps the logic testable and makes the inputs visible.
 type ScanOptions struct {
 	Debug       bool
-	Mock        bool
 	Autoconnect bool
+	Theme       string
 	NoTUI       bool
 	Port        string
 	Baud        int
@@ -88,7 +87,11 @@ func Scan(ctx context.Context, opts ScanOptions) error {
 		resolver = resolver.WithMake(make)
 	}
 
-	provider := newProvider(opts)
+	provider := serial.New(serial.Options{
+		Port:        opts.Port,
+		Baud:        opts.Baud,
+		ReadTimeout: opts.Timeout,
+	})
 	// The report has no picker, so it has to attach on its own.
 	provider.SetAutoconnect(opts.Autoconnect || opts.NoTUI)
 
@@ -113,20 +116,9 @@ func Scan(ctx context.Context, opts ScanOptions) error {
 		slog.Info("Starting without a vehicle; will connect when one appears",
 			"reason", startErr)
 	}
-	return displayer.New(provider, resolver, garage, makes).Run()
-}
-
-func newProvider(opts ScanOptions) obd.OBDProvider {
-	if opts.Mock {
-		slog.Info("Using the simulated vehicle")
-		return mock.New()
-	}
-
-	return serial.New(serial.Options{
-		Port:        opts.Port,
-		Baud:        opts.Baud,
-		ReadTimeout: opts.Timeout,
-	})
+	ui := displayer.New(provider, resolver, garage, makes)
+	ui.SetTheme(displayer.ThemeNamed(opts.Theme))
+	return ui.Run()
 }
 
 // UserCatalogPath is where an owner can drop definitions for their own

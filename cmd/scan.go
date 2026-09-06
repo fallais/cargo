@@ -11,14 +11,13 @@ import (
 )
 
 // scanFlagNames is shared so the root command, which delegates to scan, binds
-// exactly the same set. Letting the two drift is how "--mock" silently stops
+// exactly the same set. Letting the two drift is how "--port" silently stops
 // working on one of them.
-var scanFlagNames = []string{"no-tui", "mock", "port", "baud", "timeout", "make", "autoconnect"}
+var scanFlagNames = []string{"no-tui", "port", "baud", "timeout", "make", "autoconnect", "theme"}
 
 // registerScanFlags declares the scan flags on a flag set.
 func registerScanFlags(flags *pflag.FlagSet) {
 	flags.Bool("no-tui", false, "Print a single report and exit instead of running the UI")
-	flags.Bool("mock", false, "Use a simulated vehicle instead of a real adapter")
 	flags.String("port", "", "Serial port of the adapter (default: autodetect)")
 	// Zero means probe the rates an ELM327 actually uses, rather than
 	// guessing one.
@@ -26,19 +25,20 @@ func registerScanFlags(flags *pflag.FlagSet) {
 	flags.Duration("timeout", 5*time.Second, "Timeout for a single adapter command")
 	flags.String("make", "", "Vehicle make, to disambiguate manufacturer-specific codes")
 	flags.Bool("autoconnect", false, "Attach to the first adapter that answers, without being asked")
+	flags.String("theme", "terminal", "UI colours: terminal (keep your background) or dark")
 }
 
 // runScan is shared by "cargo scan" and by bare "cargo".
 func runScan(cmd *cobra.Command, args []string) error {
 	return app.Scan(cmd.Context(), app.ScanOptions{
 		Debug:       viper.GetBool("debug"),
-		Mock:        viper.GetBool("mock"),
 		NoTUI:       viper.GetBool("no-tui"),
 		Port:        viper.GetString("port"),
 		Baud:        viper.GetInt("baud"),
 		Timeout:     viper.GetDuration("timeout"),
 		Make:        viper.GetString("make"),
 		Autoconnect: viper.GetBool("autoconnect"),
+		Theme:       viper.GetString("theme"),
 	})
 }
 

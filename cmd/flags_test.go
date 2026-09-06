@@ -9,7 +9,7 @@ import (
 
 // Bare "cargo" delegates to scan, and cobra does not inherit a subcommand's
 // PreRunE. Both commands must therefore declare and bind the same flags, or
-// "--mock" works on one and is silently ignored on the other.
+// "--port" works on one and is silently ignored on the other.
 func TestRootAndScanShareScanFlags(t *testing.T) {
 	for _, name := range scanFlagNames {
 		if rootCmd.Flags().Lookup(name) == nil {

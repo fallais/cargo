@@ -5,20 +5,36 @@ import (
 	"github.com/rivo/tview"
 )
 
-// Explicit colours rather than the terminal palette.
+// Theme names the two coherent choices.
 //
-// tview defaults to tcell.ColorBlack, which resolves to whatever the terminal
-// calls colour 0. That is rarely the terminal's actual background: Ubuntu's is
-// a dark purple, so every cell tview painted came out near-black against a
-// purple surround wherever it painted nothing.
-var theme = struct {
+// The original fault was not using colour but mixing: tview paints
+// tcell.ColorBlack, which is the terminal's palette colour 0 rather than its
+// actual background. On Ubuntu those differ, so painted cells came out
+// near-black against a purple surround wherever nothing painted at all.
+// Either answer works as long as it is applied everywhere.
+type Theme struct {
 	background tcell.Color
 	text       tcell.Color
 	dim        tcell.Color
 	border     tcell.Color
 	title      tcell.Color
 	accent     tcell.Color
-}{
+}
+
+// ThemeTerminal keeps the terminal's own background, so a translucent or
+// themed terminal stays itself. Only the foreground is ours.
+var ThemeTerminal = Theme{
+	background: tcell.ColorDefault,
+	text:       tcell.ColorDefault,
+	dim:        tcell.NewHexColor(0x6e7681),
+	border:     tcell.NewHexColor(0x6e7681),
+	title:      tcell.NewHexColor(0xf7ac16),
+	accent:     tcell.NewHexColor(0x58a6ff),
+}
+
+// ThemeDark paints its own background, for a terminal whose colours fight the
+// display.
+var ThemeDark = Theme{
 	background: tcell.NewHexColor(0x0f1319),
 	text:       tcell.NewHexColor(0xc9d1d9),
 	dim:        tcell.NewHexColor(0x6e7681),
@@ -26,6 +42,16 @@ var theme = struct {
 	title:      tcell.NewHexColor(0xf7ac16),
 	accent:     tcell.NewHexColor(0x58a6ff),
 }
+
+// ThemeNamed resolves a theme name, falling back to the terminal's own.
+func ThemeNamed(name string) Theme {
+	if name == "dark" {
+		return ThemeDark
+	}
+	return ThemeTerminal
+}
+
+var theme = ThemeTerminal
 
 // applyTheme sets the palette every primitive inherits.
 func applyTheme() {

@@ -264,16 +264,12 @@ func (s *SerialOBD) Description() string {
 	if elm != nil {
 		return fmt.Sprintf("%s @ %s", elm.portName, elm.ProtocolName())
 	}
-	if errors.Is(err, ErrNoAdapter) {
-		return "no adapter found"
-	}
+	// The caller already shows whether we are connected, so say why not
+	// rather than saying it twice.
 	if err != nil {
-		return "retrying: " + err.Error()
+		return err.Error()
 	}
-	if s.Autoconnect() {
-		return "waiting for an adapter"
-	}
-	return "not connected"
+	return ""
 }
 
 // adapter returns the live connection, or ErrNotConnected.

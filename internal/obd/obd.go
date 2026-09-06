@@ -16,9 +16,9 @@ type Adapter struct {
 	Connected bool
 }
 
-// OBDProvider is the seam between the UI and whatever is answering: a real
-// adapter, or the mock. Every method takes a context because each is a round
-// trip to a device that may not answer.
+// OBDProvider is the seam between the UI and the adapter behind it: a real
+// adapter. Every method takes a context because each is a round trip to a
+// device that may not answer.
 type OBDProvider interface {
 	// Start begins the provider's lifecycle. It does not connect unless
 	// autoconnect is on: choosing an adapter is the user's to make.

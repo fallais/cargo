@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/fallais/cargo/internal/dtc"
@@ -52,6 +53,7 @@ type Displayer struct {
 	resolver     *dtc.Resolver
 	garage       *vehicle.Garage
 	makes        []string
+	theme        Theme
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -94,6 +96,7 @@ func New(provider obd.OBDProvider, resolver *dtc.Resolver, garage *vehicle.Garag
 		resolver:     resolver,
 		garage:       garage,
 		makes:        makes,
+		theme:        ThemeTerminal,
 		ctx:          ctx,
 		cancel:       cancel,
 		stateMu:      make(chan struct{}, 1),
@@ -119,6 +122,7 @@ func (d *Displayer) lock()   { <-d.stateMu }
 func (d *Displayer) unlock() { d.stateMu <- struct{}{} }
 
 func (d *Displayer) Run() error {
+	theme = d.theme
 	applyTheme()
 
 	d.brand = tview.NewTextView().SetDynamicColors(true).SetText(wordmark)
@@ -127,13 +131,21 @@ func (d *Displayer) Run() error {
 		SetDynamicColors(true).
 		SetTextAlign(tview.AlignRight)
 
-	banner := tview.NewFlex()
-	banner.AddItem(d.brand, len([]rune(wordmarkLine))+2, 0, false)
-	banner.AddItem(d.statusText, 0, 1, false)
-
 	d.helpText = tview.NewTextView().
 		SetDynamicColors(true).
-		SetTextAlign(tview.AlignCenter)
+		SetTextAlign(tview.AlignRight)
+
+	// Status on the first two rows, keys on the third, all beside the
+	// wordmark rather than below it: a separate help row cost a line of
+	// the table for one line of text.
+	side := tview.NewFlex().SetDirection(tview.FlexRow)
+	side.AddItem(d.statusText, 2, 0, false)
+	side.AddItem(d.helpText, 1, 0, false)
+
+	banner := tview.NewFlex()
+	banner.AddItem(d.brand, len([]rune(wordmarkLine))+2, 0, false)
+	banner.AddItem(side, 0, 1, false)
+
 	d.flashText = tview.NewTextView().SetDynamicColors(true)
 
 	d.pages.AddPage("dashboard", d.buildDashboard(), true, true)
@@ -143,11 +155,8 @@ func (d *Displayer) Run() error {
 
 	root := tview.NewFlex().SetDirection(tview.FlexRow)
 	root.AddItem(banner, 3, 0, false)
-	root.AddItem(d.helpText, 1, 0, false)
 	root.AddItem(d.pages, 0, 1, true)
 	root.AddItem(d.flashText, 1, 0, false)
-
-	d.paintHelp("dashboard")
 
 	d.app.SetRoot(root, true)
 	d.app.SetInputCapture(d.onKey)
@@ -159,6 +168,14 @@ func (d *Displayer) Run() error {
 		screen.Fill(' ', tcell.StyleDefault.Background(theme.background))
 		return false
 	})
+
+	// Connecting is the first thing to do, so start where it happens,
+	// unless autoconnect already attached.
+	landing := "adapter"
+	if d.provider.IsConnected() {
+		landing = "dashboard"
+	}
+	d.showPage(landing)
 
 	go d.pollLive()
 	go d.pollDTCs()
@@ -219,18 +236,8 @@ func (d *Displayer) showPage(name string) {
 const nav = "[::b]d[::-] Dashboard  [::b]c[::-] Codes  [::b]v[::-] Vehicle  " +
 	"[::b]a[::-] Adapter  [::b]q[::-] Quit"
 
-func (d *Displayer) paintHelp(page string) {
-	local := ""
-	switch page {
-	case "dtc":
-		local = "[::b]r[::-] Rescan     "
-	case "vehicle":
-		local = "[::b]r[::-] Read VIN  [::b]m[::-] Make  [::b]n[::-] Add  [::b]x[::-] Remove     "
-	case "adapter":
-		local = "[::b]enter[::-] Connect  [::b]x[::-] Disconnect  [::b]s[::-] Scan  " +
-			"[::b]t[::-] Autoconnect     "
-	}
-	d.helpText.SetText(local + nav)
+func (d *Displayer) paintHelp(string) {
+	d.helpText.SetText(nav + " ")
 }
 
 // flash shows a transient message under the page.
@@ -265,8 +272,7 @@ func (d *Displayer) buildDashboard() tview.Primitive {
 		SetDynamicColors(true).
 		SetTextAlign(tview.AlignCenter).
 		SetText("\n[yellow]No vehicle connected[white]\n\n" +
-			"Plug in an ELM327 adapter. Live data appears on its own.\n" +
-			"[gray]Use --port to choose a device, or --mock to try the UI.[white]")
+			"Press [::b]a[::-] to choose an adapter and connect.")
 	waiting.SetBorder(true).SetTitle(" Live data ")
 
 	d.dashPages = tview.NewPages()
@@ -288,6 +294,9 @@ func (d *Displayer) buildDTC() tview.Primitive {
 	flex := tview.NewFlex().SetDirection(tview.FlexRow)
 	flex.AddItem(d.dtcSummary, 1, 0, false)
 	flex.AddItem(d.dtcTable, 0, 1, true)
+	flex.AddItem(tview.NewTextView().
+		SetDynamicColors(true).
+		SetText("[::b]r[::-] rescan every module"), 1, 0, false)
 
 	d.renderDTCTable(nil)
 	return flex
@@ -321,7 +330,7 @@ func (d *Displayer) renderDTCTable(codes []dtc.DTC) {
 		// empty table, and only one of them is good news.
 		message, summary := "No trouble codes reported", "[green]No faults[white]"
 		if !d.connected() {
-			message = "Not connected. Plug in an adapter and the scan will start on its own"
+			message = "Not connected. Press a to choose an adapter"
 			summary = "[yellow]Waiting for a vehicle[white]"
 		}
 		d.dtcTable.SetCell(1, 0, tview.NewTableCell("-"))
@@ -513,11 +522,11 @@ func (d *Displayer) paintDashboard(s snapshot) {
 		dot, state = "[green]\u25cf[white]", "connected"
 	}
 
-	// Right-aligned, one fact per line beside the wordmark.
-	status := fmt.Sprintf("%s %s \n[gray]%s[white] \n", dot, state, d.provider.Description())
+	detail := d.provider.Description()
 	if make := d.codeMake(); make != "" {
-		status += fmt.Sprintf("[aqua]%s[white] ", make)
+		detail += "  [aqua]" + make + "[white]"
 	}
+	status := fmt.Sprintf("%s %s \n[gray]%s[white] ", dot, state, strings.TrimSpace(detail))
 	d.statusText.SetText(status)
 }
 
@@ -561,3 +570,6 @@ const wordmark = "[#f7ac16]┌─┐┌─┐┬─┐┌─┐┌─┐\n│  �
 
 // wordmarkLine is one row of it, for measuring the column width.
 const wordmarkLine = "┌─┐┌─┐┬─┐┌─┐┌─┐"
+
+// SetTheme chooses the palette. It must be called before Run.
+func (d *Displayer) SetTheme(t Theme) { d.theme = t }

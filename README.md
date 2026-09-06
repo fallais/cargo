@@ -52,7 +52,6 @@ go install github.com/fallais/cargo@latest
 go build -o cargo .
 
 ./cargo                 # terminal UI
-./cargo --mock          # try it without a car
 ./cargo --no-tui        # one-shot report
 ```
 
@@ -76,7 +75,7 @@ The one-shot report has no picker, so it always connects on its own.
 | `--baud` | serial rate (default: probe 38400, 9600, 115200, 230400, 500000) |
 | `--make` | vehicle marque, overriding the selected vehicle for one run |
 | `--autoconnect` | attach to the first adapter that answers, without being asked |
-| `--mock` | simulated vehicle |
+| `--theme` | `terminal` keeps your background, `dark` paints its own |
 | `--no-tui` | print one report and exit |
 | `--debug` | verbose logging |
 
