@@ -29,8 +29,8 @@ Any flag can also be set via `CARGO_*` environment variables or
 
 ## Trouble codes
 
-Codes are read from every ECU that answers — stored (mode 03), pending (07) and
-permanent (0A) — and reported with the module they came from and how confirmed
+Codes are read from every ECU that answers (stored mode 03, pending 07 and
+permanent 0A) and reported with the module they came from and how confirmed
 they are. Non-emissions modules such as ABS and airbag are addressed on a
 best-effort basis: most answer UDS `0x19` rather than OBD-II mode 03, which is
 not yet implemented.
@@ -50,5 +50,5 @@ See [docs/dtc-data.md](docs/dtc-data.md) for the data format and why it is CSV.
 
 ## Licence
 
-MIT — see [LICENSE](LICENSE). The bundled trouble-code data comes from
-third-party datasets; see [CREDITS.md](CREDITS.md).
+MIT. See [LICENSE](LICENSE). The bundled trouble-code data comes from
+third-party datasets; see [NOTICE](NOTICE).

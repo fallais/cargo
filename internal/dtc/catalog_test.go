@@ -202,9 +202,9 @@ func TestResolverFallsBackToEncoding(t *testing.T) {
 		t.Errorf("known code = %q, want the catalog entry", def.Description)
 	}
 
-	// P1134 is vendor space and in no catalog, but the encoding still proves
+	// P1FFF is vendor space and in no catalog, but the encoding still proves
 	// the system and that no shared definition can exist.
-	unknown, _ := Parse("P1134")
+	unknown, _ := Parse("P1FFF")
 	def := r.Describe(unknown)
 	if !strings.Contains(def.Description, "manufacturer-specific") {
 		t.Errorf("unknown code = %q, want the derived fallback", def.Description)

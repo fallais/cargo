@@ -15,9 +15,9 @@ import (
 	"cargo/internal/dtc"
 )
 
-// Licence records how a dataset may be used. It is carried through the import
-// so CREDITS.md can be generated from the same list that produced the data,
-// and cannot drift from it.
+// Licence records how a dataset may be used. It is reported at the end of an
+// import and mirrored in the NOTICE file, so adding a source without settling
+// its terms is hard to do by accident.
 type Licence struct {
 	SPDX   string
 	Holder string
@@ -174,10 +174,16 @@ func ParseCSV(data []byte) ([]Record, error) {
 	return records, nil
 }
 
-// cleanDescription normalises whitespace and strips the trailing punctuation
-// and stray quoting the sources carry, so the same definition arriving from
-// two datasets compares equal instead of duplicating.
+// dashes normalises the en and em dashes the sources use mid-description down
+// to a plain hyphen, so the catalog stays ASCII and two datasets writing the
+// same definition with different dashes compare equal.
+var dashes = strings.NewReplacer("\u2013", "-", "\u2014", "-")
+
+// cleanDescription normalises whitespace and dashes, and strips the trailing
+// punctuation and stray quoting the sources carry, so the same definition
+// arriving from two datasets compares equal instead of duplicating.
 func cleanDescription(s string) string {
+	s = dashes.Replace(s)
 	s = strings.Join(strings.Fields(s), " ")
 	s = strings.Trim(s, `"'`)
 	return strings.TrimRight(s, ".;, ")

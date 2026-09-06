@@ -258,8 +258,8 @@ func (r *Resolver) Describe(d DTC) Definition {
 	// Otherwise say that plainly instead of picking one at random and
 	// sending someone to replace the wrong part.
 	out := r.derive(d)
-	out.Description = fmt.Sprintf("%s — %d makes define this code differently; pass --make to choose",
-		d.Describe(), len(defs))
+	out.Description = fmt.Sprintf("%s, defined differently by %d makes; pass --make to choose",
+		d.System, len(defs))
 	return out
 }
 

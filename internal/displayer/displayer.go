@@ -96,7 +96,7 @@ func (d *Displayer) unlock() { d.stateMu <- struct{}{} }
 func (d *Displayer) Run() error {
 	title := tview.NewTextView().
 		SetTextAlign(tview.AlignCenter).
-		SetText("cargo — command-line OBD-II tool")
+		SetText("cargo - command-line OBD-II tool")
 	d.statusText = tview.NewTextView().SetTextAlign(tview.AlignCenter).SetDynamicColors(true)
 	d.helpText = tview.NewTextView().
 		SetTextAlign(tview.AlignCenter).
@@ -166,7 +166,7 @@ func (d *Displayer) buildDashboard() tview.Primitive {
 		SetDynamicColors(true).
 		SetTextAlign(tview.AlignCenter).
 		SetText("\n[yellow]No vehicle connected[white]\n\n" +
-			"Plug in an ELM327 adapter — live data appears on its own.\n" +
+			"Plug in an ELM327 adapter. Live data appears on its own.\n" +
 			"[gray]Use --port to choose a device, or --mock to try the UI.[white]")
 	waiting.SetBorder(true).SetTitle(" Live data ")
 
@@ -176,8 +176,8 @@ func (d *Displayer) buildDashboard() tview.Primitive {
 	return d.dashPages
 }
 
-// dtcColumns are laid out so the two facts that were previously thrown away —
-// which ECU reported the code, and how confirmed it is — lead the row.
+// dtcColumns are laid out so the two facts that were previously thrown away,
+// which ECU reported the code and how confirmed it is, lead the row.
 var dtcColumns = []string{"Module", "Code", "Status", "Description", "Source"}
 
 func (d *Displayer) buildDTC() tview.Primitive {
@@ -222,10 +222,10 @@ func (d *Displayer) renderDTCTable(codes []dtc.DTC) {
 		// empty table, and only one of them is good news.
 		message, summary := "No trouble codes reported", "[green]No faults[white]"
 		if !d.connected() {
-			message = "Not connected — plug in an adapter and the scan will start on its own"
+			message = "Not connected. Plug in an adapter and the scan will start on its own"
 			summary = "[yellow]Waiting for a vehicle[white]"
 		}
-		d.dtcTable.SetCell(1, 0, tview.NewTableCell("—"))
+		d.dtcTable.SetCell(1, 0, tview.NewTableCell("-"))
 		d.dtcTable.SetCell(1, 3, tview.NewTableCell(message))
 		d.dtcSummary.SetText(summary)
 		return
@@ -375,7 +375,7 @@ func (d *Displayer) refreshLive() {
 
 func value(err error, format string, args ...any) string {
 	if err != nil {
-		return "—"
+		return "-"
 	}
 	return fmt.Sprintf(format, args...)
 }
@@ -396,7 +396,7 @@ func (d *Displayer) paintDashboard(s snapshot) {
 	if s.connected {
 		status = "[green]connected[white]"
 	}
-	d.statusText.SetText(fmt.Sprintf("%s — %s", status, d.provider.Description()))
+	d.statusText.SetText(fmt.Sprintf("%s - %s", status, d.provider.Description()))
 }
 
 // pollDTCs rescans the modules on a slow cadence.

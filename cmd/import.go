@@ -20,7 +20,7 @@ var importCmd = &cobra.Command{
 		"the diff before merging, and rebuild afterwards for the change to\n" +
 		"reach the binary.",
 	PreRunE: func(cmd *cobra.Command, args []string) error {
-		return bindFlags(cmd.Flags(), "out", "cache", "offline", "fetch-timeout", "credits")
+		return bindFlags(cmd.Flags(), "out", "cache", "offline", "fetch-timeout")
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		result, err := dtcimport.Run(cmd.Context(), dtcimport.Options{
@@ -45,12 +45,6 @@ var importCmd = &cobra.Command{
 			fmt.Printf("  %-8s %s (%s)\n", l.SPDX, l.URL, l.Holder)
 		}
 
-		if path := viper.GetString("credits"); path != "" {
-			if err := dtcimport.WriteCredits(path, result); err != nil {
-				return fmt.Errorf("write credits: %w", err)
-			}
-			fmt.Printf("\nAttribution written to %s\n", path)
-		}
 		return nil
 	},
 	SilenceUsage: true,
@@ -62,7 +56,6 @@ func init() {
 	flags.String("cache", "", "Directory for downloaded sources (default: a temp dir)")
 	flags.Bool("offline", false, "Use only already-cached sources")
 	flags.Duration("fetch-timeout", 30*time.Second, "Timeout for a single download")
-	flags.String("credits", "CREDITS.md", "Attribution file to regenerate (empty to skip)")
 
 	rootCmd.AddCommand(importCmd)
 }

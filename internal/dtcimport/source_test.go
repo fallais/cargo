@@ -59,7 +59,7 @@ func TestParseCSV(t *testing.T) {
 	}
 }
 
-// Every source must declare a licence, or CREDITS.md cannot be trusted.
+// Every source must declare a licence, or the NOTICE file cannot be trusted.
 func TestEverySourceHasLicence(t *testing.T) {
 	sources := Sources()
 	if len(sources) < 30 {
@@ -78,5 +78,20 @@ func TestEverySourceHasLicence(t *testing.T) {
 			t.Errorf("duplicate source name %q", s.Name)
 		}
 		seen[s.Name] = true
+	}
+}
+
+// Sources write the same definition with hyphens, en dashes and em dashes.
+// Normalising keeps the catalog ASCII and stops the variants from being
+// imported as separate definitions.
+func TestCleanDescriptionNormalisesDashes(t *testing.T) {
+	for _, in := range []string{
+		"Reductant System Leak Detected - Small Leak",
+		"Reductant System Leak Detected – Small Leak",
+		"Reductant System Leak Detected — Small Leak",
+	} {
+		if got, want := cleanDescription(in), "Reductant System Leak Detected - Small Leak"; got != want {
+			t.Errorf("cleanDescription(%q) = %q, want %q", in, got, want)
+		}
 	}
 }

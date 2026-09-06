@@ -5,7 +5,7 @@
 // plus four hex digits. The encoding is entirely self-describing: the system
 // (powertrain, chassis, body, network) and whether the definition is
 // ISO/SAE-controlled or vendor-specific both fall out of the first byte. That
-// matters, because no open catalog covers every manufacturer code — when a
+// matters, because no open catalog covers every manufacturer code. When a
 // lookup misses we can still say something true about the code rather than
 // printing "unknown".
 package dtc
