@@ -3,6 +3,9 @@
 package log
 
 import (
+	"os"
+	"path/filepath"
+
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -11,27 +14,69 @@ import (
 // cobra runs InitLogger degrades to silence instead of a nil dereference.
 var logger = zap.NewNop()
 
-// InitLogger configures the process logger. Debug selects zap's development
-// encoder, which is readable at a terminal; otherwise output is JSON.
+// config builds the shared logger configuration. Debug selects zap's
+// development encoder, which is readable at a terminal; otherwise output is
+// JSON.
+func config(debug bool) zap.Config {
+	cfg := zap.NewProductionConfig()
+	if debug {
+		cfg = zap.NewDevelopmentConfig()
+	}
+	cfg.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+	cfg.DisableStacktrace = true
+	return cfg
+}
+
+// InitLogger configures logging to stderr.
 //
 // Calling this is optional: until it runs, logging goes nowhere rather than
 // panicking on a nil logger.
 func InitLogger(debug bool) {
-	var err error
-	if debug {
-		cfg := zap.NewDevelopmentConfig()
-		cfg.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
-		cfg.DisableStacktrace = true
-		logger, err = cfg.Build()
-	} else {
-		cfg := zap.NewProductionConfig()
-		cfg.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
-		cfg.DisableStacktrace = true
-		logger, err = cfg.Build()
+	logger = build(config(debug))
+}
+
+// InitFileLogger sends logging to a file instead of the terminal, and returns
+// the path it settled on.
+//
+// The terminal UI owns the screen. Anything written to stderr while it is
+// running lands on top of the drawn cells, and because the display only
+// repaints what it thinks has changed, the damage persists rather than being
+// cleaned up on the next frame. Connecting an adapter emits several lines at
+// once, which is why the corruption appeared exactly then.
+//
+// A failure here is not fatal: losing the log is better than refusing to run.
+func InitFileLogger(debug bool, path string) (string, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return "", err
 	}
+	// Truncate rather than append: this is a diagnostic for the session in
+	// progress, not an audit trail.
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		return "", err
+	}
+
+	cfg := config(debug)
+	encoder := zapcore.NewJSONEncoder(cfg.EncoderConfig)
+	if debug {
+		encoder = zapcore.NewConsoleEncoder(cfg.EncoderConfig)
+	}
+
+	logger = zap.New(zapcore.NewCore(encoder, zapcore.AddSync(f), cfg.Level))
+	return path, nil
+}
+
+// Discard silences logging, for when there is nowhere safe to write.
+func Discard() {
+	logger = zap.NewNop()
+}
+
+func build(cfg zap.Config) *zap.Logger {
+	l, err := cfg.Build()
 	if err != nil {
 		panic(err)
 	}
+	return l
 }
 
 // Info logs at info level.

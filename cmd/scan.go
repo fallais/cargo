@@ -30,6 +30,7 @@ func registerScanFlags(flags *pflag.FlagSet) {
 // runScan is shared by "cargo scan" and by bare "cargo".
 func runScan(cmd *cobra.Command, args []string) error {
 	return app.Scan(cmd.Context(), app.ScanOptions{
+		Debug:   viper.GetBool("debug"),
 		Mock:    viper.GetBool("mock"),
 		NoTUI:   viper.GetBool("no-tui"),
 		Port:    viper.GetString("port"),

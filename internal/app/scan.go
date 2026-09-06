@@ -26,6 +26,7 @@ import (
 // ScanOptions is everything the scan needs. Passing a struct rather than
 // reading viper in here keeps the logic testable and makes the inputs visible.
 type ScanOptions struct {
+	Debug   bool
 	Mock    bool
 	NoTUI   bool
 	Port    string
@@ -36,6 +37,22 @@ type ScanOptions struct {
 
 // Scan connects to a vehicle and either runs the UI or prints one report.
 func Scan(ctx context.Context, opts ScanOptions) error {
+	// Move logging off the terminal before anything logs at all. The UI is
+	// about to take the screen, and a line written over it corrupts the
+	// display until the next full repaint. This has to come first: setting
+	// up the provider logs, and that line alone was enough to show.
+	if !opts.NoTUI {
+		path, err := log.InitFileLogger(opts.Debug, LogPath())
+		if err != nil {
+			// Keep going without a log rather than refusing to start, but
+			// say so while stderr is still ours.
+			fmt.Fprintf(os.Stderr, "cargo: logging disabled: %v\n", err)
+			log.Discard()
+		} else {
+			fmt.Fprintf(os.Stderr, "cargo: logging to %s\n", path)
+		}
+	}
+
 	// Ctrl-C has to reach the provider, not just the process: an adapter
 	// left mid-command holds the port until it times out.
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
@@ -109,6 +126,15 @@ func newProvider(opts ScanOptions) obd.OBDProvider {
 		Baud:        opts.Baud,
 		ReadTimeout: opts.Timeout,
 	})
+}
+
+// LogPath is where the UI writes its log, since it cannot use the terminal.
+func LogPath() string {
+	dir, err := os.UserCacheDir()
+	if err != nil {
+		return filepath.Join(os.TempDir(), "cargo.log")
+	}
+	return filepath.Join(dir, "cargo", "cargo.log")
 }
 
 // UserCatalogPath is where an owner can drop definitions for their own
