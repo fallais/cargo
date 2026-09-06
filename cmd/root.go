@@ -13,9 +13,22 @@ import (
 	"github.com/spf13/viper"
 )
 
+// version is stamped at build time with -ldflags. The default is what a
+// "go build" or "go run" from a working tree reports.
+var version = "dev"
+
+// SetVersion lets the build inject a release version.
+func SetVersion(v string) {
+	if v != "" {
+		version = v
+		rootCmd.Version = v
+	}
+}
+
 var rootCmd = &cobra.Command{
-	Use:   "cargo",
-	Short: "Read live data and trouble codes from a vehicle over OBD-II",
+	Use:     "cargo",
+	Version: version,
+	Short:   "Read live data and trouble codes from a vehicle over OBD-II",
 	Long: "cargo talks to a vehicle through an ELM327 adapter and shows live\n" +
 		"readings and diagnostic trouble codes, in a terminal UI or as a\n" +
 		"one-shot report.",

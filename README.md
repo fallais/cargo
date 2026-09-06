@@ -1,11 +1,43 @@
 <p align="center">
-  <img src="assets/logo.png" alt="cargo" width="440">
+  <img src="assets/logo.png" alt="cargo" width="360">
 </p>
 
-# cargo
+<h1 align="center">cargo</h1>
 
-A command-line OBD-II tool. Reads live data and diagnostic trouble codes from a
-vehicle through an ELM327 adapter.
+<p align="center">
+  A command-line OBD-II tool. Reads live data and diagnostic trouble codes
+  <br>from a vehicle through an ELM327 adapter.
+</p>
+
+<p align="center">
+  <a href="https://github.com/fallais/cargo/actions/workflows/ci.yml">
+    <img alt="CI" src="https://img.shields.io/github/actions/workflow/status/fallais/cargo/ci.yml?branch=main&style=flat-square&logo=github&label=CI">
+  </a>
+  <a href="https://github.com/fallais/cargo/releases">
+    <img alt="Release" src="https://img.shields.io/github/v/release/fallais/cargo?style=flat-square&logo=github&color=blue">
+  </a>
+  <a href="go.mod">
+    <img alt="Go" src="https://img.shields.io/github/go-mod/go-version/fallais/cargo?style=flat-square&logo=go&logoColor=white">
+  </a>
+  <a href="LICENSE">
+    <img alt="Licence" src="https://img.shields.io/github/license/fallais/cargo?style=flat-square&color=green">
+  </a>
+  <img alt="Platforms" src="https://img.shields.io/badge/platform-linux%20%7C%20macos%20%7C%20windows-lightgrey?style=flat-square">
+  <img alt="Trouble codes" src="https://img.shields.io/badge/trouble%20codes-17%2C958-orange?style=flat-square">
+</p>
+
+## Screenshot
+
+<p align="center">
+  <img src="assets/screenshot.png" alt="Trouble codes across five modules" width="880">
+</p>
+
+Codes grouped by the ECU that reported them. The chassis and airbag faults came
+over UDS, so they carry a failure type (`C0035-64`) saying how the part failed,
+and the `!` marks one whose module is asking for a warning lamp. `P1234` reads
+as Ford's definition because the VIN identified the car.
+
+## Usage
 
 ```
 go build -o cargo .

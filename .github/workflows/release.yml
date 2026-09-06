@@ -1,0 +1,82 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, goos: linux, goarch: amd64, cgo: 0 }
+          - { os: ubuntu-latest, goos: linux, goarch: arm64, cgo: 0 }
+          - { os: ubuntu-latest, goos: windows, goarch: amd64, cgo: 0, ext: .exe }
+          # macOS binaries need cgo for the serial library, so each
+          # architecture is built on a runner of its own kind.
+          - { os: macos-13, goos: darwin, goarch: amd64, cgo: 1 }
+          - { os: macos-latest, goos: darwin, goarch: arm64, cgo: 1 }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: ${{ matrix.cgo }}
+        run: |
+          name="cargo-${GITHUB_REF_NAME}-${GOOS}-${GOARCH}"
+          mkdir -p "dist/${name}"
+          go build \
+            -trimpath \
+            -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" \
+            -o "dist/${name}/cargo${{ matrix.ext }}" .
+          cp README.md LICENSE NOTICE "dist/${name}/"
+          cd dist
+          if [ "${GOOS}" = "windows" ]; then
+            zip -r "${name}.zip" "${name}"
+          else
+            tar czf "${name}.tar.gz" "${name}"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cargo-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+          if-no-files-found: error
+
+  release:
+    name: Publish
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        run: |
+          cd dist
+          sha256sum * > checksums.txt
+          cat checksums.txt
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          draft: false

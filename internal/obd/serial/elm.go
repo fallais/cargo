@@ -100,8 +100,7 @@ func Open(ctx context.Context, opts Options) (*ELM327, error) {
 
 	ports := opts.ports()
 	if len(ports) == 0 {
-		return nil, fmt.Errorf("%w: looked for %s", ErrNoAdapter,
-			strings.Join(candidatePatterns, ", "))
+		return nil, fmt.Errorf("%w: looked for %s", ErrNoAdapter, candidateDescription())
 	}
 
 	rates := baudRates

@@ -3,6 +3,7 @@ package serial
 import (
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 // candidatePatterns cover how ELM327 adapters present themselves on Linux:
@@ -23,6 +24,11 @@ func detectPlatformSerialDev() string {
 		return ports[0]
 	}
 	return "/dev/ttyUSB0"
+}
+
+// candidateDescription says where we looked, for an error message.
+func candidateDescription() string {
+	return strings.Join(candidatePatterns, ", ")
 }
 
 // listPlatformSerialDevs returns every device that might be an adapter.
