@@ -9,6 +9,7 @@ package vehicle
 import (
 	"fmt"
 	"strings"
+	"time"
 )
 
 // vinLength is fixed by ISO 3779.
@@ -105,31 +106,40 @@ func validCheckDigit(vin string) bool {
 	return vin[8] == want
 }
 
-// modelYear decodes position 10.
+// modelYear decodes position 10, or returns zero when that position does not
+// hold a year.
 //
-// The letter cycle repeats every thirty years, so 'A' is both 1980 and 2010.
-// The convention for resolving that is position 11: it is alphabetic on
-// vehicles from 2010 onward and numeric before. It is a convention rather than
-// a rule, so a wrong answer here is possible and the year is only ever a hint.
+// The cycle repeats every thirty years, so 'A' is both 1980 and 2010 and '5'
+// is both 2005 and 2035. The convention for resolving that is position 7:
+// alphabetic on vehicles from 2010 onward, numeric before. Only North America
+// mandates any of this; elsewhere everything from position 10 on is the
+// manufacturer's to define, and plenty of European makes put a plant or model
+// code where this expects a year. So the answer is a hint at best.
 func modelYear(vin string) int {
 	code := vin[9]
 
-	if code >= '1' && code <= '9' {
-		year := 2000 + int(code-'0')
-		if vin[6] >= 'A' && vin[6] <= 'Z' {
-			year += 30
+	var year int
+	switch {
+	case code >= '1' && code <= '9':
+		year = 2000 + int(code-'0')
+	default:
+		index := strings.IndexByte(yearLetters, code)
+		if index < 0 {
+			return 0
 		}
-		return year
+		year = 1980 + index
 	}
 
-	index := strings.IndexByte(yearLetters, code)
-	if index < 0 {
-		return 0
-	}
-
-	year := 1980 + index
 	if vin[6] >= 'A' && vin[6] <= 'Z' {
 		year += 30
+	}
+
+	// A model year runs at most a year ahead of the calendar, since next
+	// year's models go on sale late this year. Anything past that is proof
+	// this VIN does not encode a year here at all, and saying nothing is
+	// better than announcing a car from the next decade.
+	if year > time.Now().Year()+1 {
+		return 0
 	}
 	return year
 }
@@ -140,6 +150,11 @@ func modelYear(vin string) int {
 // so this covers the makes the trouble-code catalog can actually say something
 // about, plus the common European marques. An unrecognised WMI is not an
 // error: the user picks the make instead.
+//
+// A marque the catalog holds no codes for still earns an entry. Naming the car
+// on the status line is worth having on its own, and Describe degrades
+// cleanly: narrowing to a make with no definitions falls through to whatever
+// the makes that do define a code agree on.
 var wmiPrefixes = map[string]string{
 	// General Motors
 	"1G1": "chevy", "1GC": "chevy", "2G1": "chevy", "3GN": "chevy", "KL1": "chevy",
@@ -172,7 +187,9 @@ var wmiPrefixes = map[string]string{
 	"JS2": "suzuki", "JS3": "suzuki", "KL5": "suzuki",
 
 	// Korean
-	"KNA": "kia", "KND": "kia", "KNM": "kia", "5XY": "kia",
+	"KNA": "kia", "KND": "kia", "KNM": "kia", "5XY": "kia", "U5Y": "kia",
+	"KMH": "hyundai", "KMF": "hyundai", "KM8": "hyundai",
+	"TMA": "hyundai", "NLH": "hyundai", "5NP": "hyundai", "5NM": "hyundai",
 
 	// European
 	"WBA": "bmw", "WBS": "bmw", "WBY": "bmw", "4US": "bmw", "5UX": "bmw",
@@ -181,7 +198,30 @@ var wmiPrefixes = map[string]string{
 	"WVW": "volkswagen", "WV1": "volkswagen", "WV2": "volkswagen",
 	"1VW": "volkswagen", "3VW": "volkswagen", "9BW": "volkswagen",
 	"WAU": "audi", "WA1": "audi", "TRU": "audi", "WUA": "audi",
-	"SAJ": "jaguar", "SAD": "jaguar",
+	"SAJ": "jaguar", "SAD": "jaguar", "SAL": "land rover",
+	"WMW": "mini", "WME": "smart", "WP0": "porsche", "WP1": "porsche",
+	"VSS": "seat", "TMB": "skoda", "WVG": "volkswagen", "AAV": "volkswagen",
+	"YV1": "volvo", "YV4": "volvo", "LVY": "volvo", "YS3": "saab",
+
+	// Renault group. UU1 is Automobile Dacia, in Romania.
+	"VF1": "renault", "UU1": "dacia",
+
+	// PSA, now part of Stellantis. VR3 and VR7 are the newer series.
+	"VF3": "peugeot", "VR3": "peugeot",
+	"VF7": "citroen", "VR7": "citroen", "VR1": "ds",
+	"W0L": "opel", "W0V": "opel",
+
+	// Fiat group
+	"ZFA": "fiat", "ZAR": "alfa romeo", "ZLA": "lancia",
+	"ZFF": "ferrari", "ZAM": "maserati",
+
+	// European plants of makes already listed above
+	"SB1": "toyota", "VNK": "toyota", "NMT": "toyota",
+	"SJN": "nissan", "VSK": "nissan",
+	"JMZ": "mazda", "JMB": "mitsubishi", "TSM": "suzuki", "JSA": "suzuki",
+	"JHL": "honda", "WBX": "bmw", "W1V": "mercedes",
+
+	"5YJ": "tesla", "7SA": "tesla", "LRW": "tesla", "XP7": "tesla",
 }
 
 // MakeForWMI resolves a world manufacturer identifier to a marque, or "" if it

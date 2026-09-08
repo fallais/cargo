@@ -14,9 +14,15 @@ func TestParseVIN(t *testing.T) {
 		{"volkswagen", "3VWFE21C04M000001", "volkswagen", 2004},
 		// Position 7 is alphabetic, so the year letter reads as 2010 or
 		// later rather than thirty years earlier.
-		{"tesla, unknown WMI", "5YJ3E1EA7JF000316", "", 2018},
+		{"tesla, position 7 alphabetic", "5YJ3E1EA7JF000316", "tesla", 2018},
+		// ZZZ is not an assigned identifier, so it stands in for the
+		// unrecognised case without going stale when the table grows.
+		{"unassigned WMI", "ZZZ3E1EA7JF000316", "", 2018},
 		// Position 7 numeric, so the same letter reads as the earlier cycle.
 		{"acura legend", "JH4KA7660MC003887", "acura", 1991},
+		// A Dacia: position 10 is not a model year on this VIN, and the
+		// thirty-year rule would otherwise read it as a car from 2035.
+		{"dacia, no year at position 10", "UU15SDCJC54239522", "dacia", 0},
 	}
 
 	for _, tc := range tests {

@@ -7,6 +7,11 @@
 # The TPMS and body codes below came from this project's original built-in
 # table and are absent from the imported sources.
 #
+# Rows carrying a make are marque-specific and were added because the imported
+# datasets cover no European manufacturer: their 32 marques are American and
+# Japanese, so a Renault-group code resolves to nothing at all, or worse to an
+# unrelated American definition that happens to share the number.
+#
 # Records are sorted by code then make; internal/dtc verifies that on load.
 #
 # format: code,make,description
@@ -20,6 +25,8 @@ C1A12,,Tire Pressure Sensor RF Malfunction
 C1A13,,Tire Pressure Sensor RR Malfunction
 C1A14,,Tire Pressure Sensor LR Malfunction
 C1A15,,TPMS System Malfunction
+C1A60,dacia,Tyre Pressure Monitoring - Rear Left Wheel Sensor
+C1A60,renault,Tyre Pressure Monitoring - Rear Left Wheel Sensor
 C2100,,Tire Pressure Too Low - Left Front
 C2101,,Tire Pressure Too Low - Right Front
 C2102,,Tire Pressure Too Low - Right Rear

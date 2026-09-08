@@ -14,6 +14,18 @@ import (
 //go:embed data/*.csv
 var embedded embed.FS
 
+// Provenance labels. Every Definition carries one, and the UI shows it, so a
+// hand-checked entry is distinguishable on screen from a scraped one.
+const (
+	SourceCurated = "curated"
+	SourceGeneric = "generic"
+	SourceVendor  = "vendor"
+	// SourceVendorUnattributed marks a vendor definition that names no
+	// marque. It is the same row, said with less confidence.
+	SourceVendorUnattributed = "vendor, no make"
+	SourceDerived            = "derived from encoding"
+)
+
 // Definition is a human-readable meaning for a code, plus where that meaning
 // came from. Provenance is not decoration: the open catalogs differ in
 // licensing and in how much they can be trusted, so anything we display should
@@ -161,9 +173,9 @@ func Builtin() (Catalog, error) {
 		// label says "generic", not "SAE": claiming the standard as the
 		// source of the wording would overstate it.
 		for _, f := range []struct{ path, source string }{
-			{"data/local.csv", "curated"},
-			{"data/generic.csv", "generic"},
-			{"data/manufacturer.csv", "vendor"},
+			{"data/local.csv", SourceCurated},
+			{"data/generic.csv", SourceGeneric},
+			{"data/manufacturer.csv", SourceVendor},
 		} {
 			b, err := embedded.ReadFile(f.path)
 			if err != nil {
@@ -229,23 +241,37 @@ func (r *Resolver) Describe(d DTC) Definition {
 	}
 
 	defs := candidates(r.Catalog, d.Code)
-	switch len(defs) {
-	case 0:
+	if len(defs) == 0 {
 		return r.derive(d)
-	case 1:
-		if defs[0].Description == "" {
-			return r.derive(d)
-		}
-		return defs[0]
 	}
 
-	// Several makes define this code. Prefer the configured one.
+	// Prefer the marque we are attached to, whatever else the code means.
 	if r.Make != "" {
 		for _, def := range defs {
-			if strings.EqualFold(def.Make, r.Make) {
+			if def.Description != "" && strings.EqualFold(def.Make, r.Make) {
 				return def
 			}
 		}
+	}
+
+	// Nothing here was written for this vehicle. A vendor definition
+	// compiled from another marque's list is not an answer about this car:
+	// "Door Lock Cylinder Circuit Open" for what a Dacia means by B1560
+	// sends someone to the wrong part with full confidence. The derived
+	// description says less and is true.
+	//
+	// The curated layer is exempt. Its entries carry no make because they
+	// were checked by hand and meant to apply broadly, not because their
+	// provenance was lost.
+	if r.Make != "" && allScrapedVendor(defs) {
+		return r.derive(d)
+	}
+
+	if len(defs) == 1 {
+		if defs[0].Description == "" {
+			return r.derive(d)
+		}
+		return unattributed(defs[0])
 	}
 
 	// Definitions can agree even when several makes list the code, in
@@ -262,6 +288,33 @@ func (r *Resolver) Describe(d DTC) Definition {
 	out.Description = fmt.Sprintf("%s, defined differently by %d makes; pass --make to choose",
 		d.System, len(defs))
 	return out
+}
+
+// allScrapedVendor reports whether every candidate came from the scraped
+// vendor layer.
+//
+// Two layers are exempt. A generic code is ISO/SAE-controlled and means the
+// same on every vehicle, so the marque is irrelevant to it. A curated entry
+// carries no make because it was checked by hand and meant to apply broadly,
+// not because its provenance was lost.
+func allScrapedVendor(defs []Definition) bool {
+	for _, def := range defs {
+		if def.Source != SourceVendor {
+			return false
+		}
+	}
+	return len(defs) > 0
+}
+
+// unattributed marks a scraped vendor definition that names no marque, so the
+// display can show that it is a hint rather than this vehicle's answer. Around
+// a third of the imported vendor rows arrive with no make, because the pooled
+// upstream files do not record one.
+func unattributed(def Definition) Definition {
+	if def.Source == SourceVendor && def.Make == "" {
+		def.Source = SourceVendorUnattributed
+	}
+	return def
 }
 
 // candidates returns every definition a catalog holds for a code.
@@ -290,7 +343,7 @@ func (r *Resolver) derive(d DTC) Definition {
 	return Definition{
 		Code:        d.Code,
 		Description: d.Describe(),
-		Source:      "derived from encoding",
+		Source:      SourceDerived,
 	}
 }
 

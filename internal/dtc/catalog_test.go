@@ -213,3 +213,72 @@ func TestResolverFallsBackToEncoding(t *testing.T) {
 		t.Errorf("source = %q, want the derived marker", def.Source)
 	}
 }
+
+// Around a third of the imported vendor rows carry no make, because the pooled
+// upstream files do not record one. Served to a marque those files never
+// covered, such a row is a guess wearing the clothes of an answer: a Dacia's
+// B1560 is a tyre-pressure fault, and the American list calls it a door lock.
+func TestDescribeWillNotBorrowAnotherMarquesVendorCode(t *testing.T) {
+	cat := Table{
+		"B1560": {Code: "B1560", Description: "Door Lock Cylinder Circuit Open", Source: SourceVendor},
+	}
+
+	known := (&Resolver{Catalog: cat}).WithMake("dacia")
+	got := known.Describe(DTC{Code: "B1560", System: Body})
+	if got.Source != SourceDerived {
+		t.Errorf("source = %q, want %q (got description %q)",
+			got.Source, SourceDerived, got.Description)
+	}
+
+	// With no marque configured there is nothing better to offer, so the
+	// definition still shows - labelled as the hint it is.
+	unknown := &Resolver{Catalog: cat}
+	got = unknown.Describe(DTC{Code: "B1560", System: Body})
+	if got.Description != "Door Lock Cylinder Circuit Open" {
+		t.Errorf("description = %q, want it kept", got.Description)
+	}
+	if got.Source != SourceVendorUnattributed {
+		t.Errorf("source = %q, want %q", got.Source, SourceVendorUnattributed)
+	}
+}
+
+// A generic code is ISO/SAE-controlled and means the same everywhere, so
+// configuring a marque must not suppress it.
+func TestDescribeKeepsGenericCodesForEveryMake(t *testing.T) {
+	cat := Table{
+		"P0073": {Code: "P0073", Description: "Ambient Air Temperature Sensor Circuit A High", Source: SourceGeneric},
+	}
+	r := (&Resolver{Catalog: cat}).WithMake("dacia")
+	if got := r.Describe(DTC{Code: "P0073", System: Powertrain}); got.Source != SourceGeneric {
+		t.Errorf("source = %q, want %q", got.Source, SourceGeneric)
+	}
+}
+
+// The curated layer carries no make because it was checked by hand, not
+// because its provenance was lost, so it survives the same filter.
+func TestDescribeKeepsCuratedCodesForEveryMake(t *testing.T) {
+	cat := Table{
+		"C1A15": {Code: "C1A15", Description: "TPMS System Malfunction", Source: SourceCurated},
+	}
+	r := (&Resolver{Catalog: cat}).WithMake("dacia")
+	if got := r.Describe(DTC{Code: "C1A15", System: Chassis}); got.Source != SourceCurated {
+		t.Errorf("source = %q, want %q", got.Source, SourceCurated)
+	}
+}
+
+func TestBuiltinHasTheRenaultGroupTPMSCode(t *testing.T) {
+	cat, err := Builtin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, make := range []string{"dacia", "renault"} {
+		r := (&Resolver{Catalog: cat}).WithMake(make)
+		got := r.Describe(DTC{Code: "C1A60", System: Chassis})
+		if got.Source != SourceCurated {
+			t.Errorf("%s: source = %q, want %q", make, got.Source, SourceCurated)
+		}
+		if !strings.Contains(got.Description, "Rear Left") {
+			t.Errorf("%s: description = %q", make, got.Description)
+		}
+	}
+}
