@@ -32,9 +32,10 @@ const dtcInterval = 30 * time.Second
 // a slow adapter would make the app feel broken.
 type snapshot struct {
 	rpm        int
+	volts      float64
 	coolant    float64
 	oil        float64
-	kilometres int
+	sinceClear int
 	codes      []dtc.DTC
 	connected  bool
 	// errs records why a field is stale, so a dash on screen can be
@@ -62,16 +63,28 @@ type Displayer struct {
 	state   snapshot
 	stateMu chan struct{} // 1-buffered, used as a mutex
 
-	dashPages     *tview.Pages
-	rpmText       *tview.TextView
-	coolantText   *tview.TextView
-	odoText       *tview.TextView
-	oilText       *tview.TextView
-	statusText    *tview.TextView
-	helpText      *tview.TextView
-	dtcTable      *tview.Table
-	dtcSummary    *tview.TextView
-	adapterList   *tview.List
+	// scanning is a 1-buffered channel held for the length of a module
+	// scan. Two scans on one serial line retarget the adapter under each
+	// other, so a second request is refused rather than queued.
+	scanning chan struct{}
+
+	dashPages   *tview.Pages
+	rpmText     *tview.TextView
+	coolantText *tview.TextView
+	odoText     *tview.TextView
+	oilText     *tview.TextView
+	voltsText   *tview.TextView
+	statusText  *tview.TextView
+	helpText    *tview.TextView
+	dtcTable    *tview.Table
+	dtcProgress *tview.TextView
+	detailText  *tview.TextView
+	// shown is the sorted order the table was last drawn in, so a selected
+	// row can be mapped back to the code it displays.
+	shown         []dtc.DTC
+	adapterForm   *tview.Form
+	adapterDrop   *tview.DropDown
+	autoCheck     *tview.Checkbox
 	adapterInfo   *tview.TextView
 	adapters      []obd.Adapter
 	connectedPort string
@@ -100,6 +113,7 @@ func New(provider obd.OBDProvider, resolver *dtc.Resolver, garage *vehicle.Garag
 		ctx:          ctx,
 		cancel:       cancel,
 		stateMu:      make(chan struct{}, 1),
+		scanning:     make(chan struct{}, 1),
 	}
 	d.state.errs = map[string]error{}
 	d.stateMu <- struct{}{}
@@ -152,6 +166,7 @@ func (d *Displayer) Run() error {
 	d.pages.AddPage("dtc", d.buildDTC(), true, false)
 	d.pages.AddPage("vehicle", d.buildVehicle(), true, false)
 	d.pages.AddPage("adapter", d.buildAdapter(), true, false)
+	d.pages.AddPage(detailPage, d.buildDetail(), true, false)
 
 	root := tview.NewFlex().SetDirection(tview.FlexRow)
 	root.AddItem(banner, 3, 0, false)
@@ -191,6 +206,13 @@ func (d *Displayer) onKey(event *tcell.EventKey) *tcell.EventKey {
 		return event
 	}
 
+	// An open dropdown owns the keyboard too. Its list takes letters to jump
+	// between options, and the page shortcuts below would steal them: typing
+	// "d" to reach /dev/ttyUSB0 would leave for the dashboard instead.
+	if d.adapterDrop != nil && d.adapterDrop.IsOpen() {
+		return event
+	}
+
 	switch event.Rune() {
 	case 'q', 'Q':
 		d.Shutdown()
@@ -218,7 +240,16 @@ func (d *Displayer) onKey(event *tcell.EventKey) *tcell.EventKey {
 		return d.onAdapterKey(event)
 	case "dtc":
 		if event.Rune() == 'r' || event.Rune() == 'R' {
-			go d.refreshDTCs()
+			d.rescanDTCs()
+			return nil
+		}
+		if event.Key() == tcell.KeyEnter {
+			d.showDetail()
+			return nil
+		}
+	case detailPage:
+		if event.Key() == tcell.KeyEscape {
+			d.showPage("dtc")
 			return nil
 		}
 	}
@@ -236,8 +267,12 @@ func (d *Displayer) showPage(name string) {
 const nav = "[::b]d[::-] Dashboard  [::b]c[::-] Codes  [::b]v[::-] Vehicle  " +
 	"[::b]a[::-] Adapter  [::b]q[::-] Quit"
 
-func (d *Displayer) paintHelp(string) {
-	d.helpText.SetText(nav + " ")
+func (d *Displayer) paintHelp(page string) {
+	help := nav
+	if page == "dtc" {
+		help = "[::b]enter[::-] Detail  [::b]r[::-] Rescan  " + nav
+	}
+	d.helpText.SetText(help + " ")
 }
 
 // flash shows a transient message under the page.
@@ -259,10 +294,11 @@ func (d *Displayer) buildDashboard() tview.Primitive {
 	d.coolantText = tview.NewTextView().SetDynamicColors(true)
 	d.odoText = tview.NewTextView().SetDynamicColors(true)
 	d.oilText = tview.NewTextView().SetDynamicColors(true)
+	d.voltsText = tview.NewTextView().SetDynamicColors(true)
 
 	live := tview.NewFlex().SetDirection(tview.FlexRow)
 	live.SetBorder(true).SetTitle(" Live data ")
-	for _, tv := range []*tview.TextView{d.rpmText, d.coolantText, d.oilText, d.odoText} {
+	for _, tv := range []*tview.TextView{d.rpmText, d.coolantText, d.oilText, d.voltsText, d.odoText} {
 		live.AddItem(tv, 1, 0, false)
 	}
 
@@ -289,15 +325,17 @@ func (d *Displayer) buildDTC() tview.Primitive {
 	d.dtcTable = tview.NewTable().SetFixed(1, 0).SetSelectable(true, false)
 	d.dtcTable.SetBorder(true).SetTitle(" Trouble codes ")
 
-	d.dtcSummary = tview.NewTextView().SetDynamicColors(true)
+	// This row used to be a fixed reminder of the r key, which the help
+	// line above already carries. A scan is tens of seconds of serial
+	// traffic with nothing else to show for it, so the row reports that
+	// instead.
+	d.dtcProgress = tview.NewTextView().SetDynamicColors(true)
 
 	flex := tview.NewFlex().SetDirection(tview.FlexRow)
-	flex.AddItem(d.dtcSummary, 1, 0, false)
 	flex.AddItem(d.dtcTable, 0, 1, true)
-	flex.AddItem(tview.NewTextView().
-		SetDynamicColors(true).
-		SetText("[::b]r[::-] rescan every module"), 1, 0, false)
+	flex.AddItem(d.dtcProgress, 1, 0, false)
 
+	d.paintScanIdle()
 	d.renderDTCTable(nil)
 	return flex
 }
@@ -325,17 +363,18 @@ func (d *Displayer) renderDTCTable(codes []dtc.DTC) {
 			SetTextColor(tcell.ColorYellow))
 	}
 
+	d.shown = nil
+
 	if len(codes) == 0 {
 		// "No faults" and "we cannot see the car" look identical in an
 		// empty table, and only one of them is good news.
-		message, summary := "No trouble codes reported", "[green]No faults[white]"
+		message := "No trouble codes reported"
 		if !d.connected() {
 			message = "Not connected. Press a to choose an adapter"
-			summary = "[yellow]Waiting for a vehicle[white]"
 		}
 		d.dtcTable.SetCell(1, 0, tview.NewTableCell("-"))
 		d.dtcTable.SetCell(1, 3, tview.NewTableCell(message))
-		d.dtcSummary.SetText(summary)
+		d.dtcTable.SetTitle(" Trouble codes ")
 		return
 	}
 
@@ -352,6 +391,8 @@ func (d *Displayer) renderDTCTable(codes []dtc.DTC) {
 		}
 		return sorted[i].Code < sorted[j].Code
 	})
+
+	d.shown = sorted
 
 	var stored, pending, permanent int
 	lastModule := ""
@@ -399,8 +440,8 @@ func (d *Displayer) renderDTCTable(codes []dtc.DTC) {
 			SetTextColor(tcell.ColorGray))
 	}
 
-	d.dtcSummary.SetText(fmt.Sprintf(
-		"[red]%d stored[white]   [yellow]%d pending[white]   [fuchsia]%d permanent[white]   across %d module(s)",
+	d.dtcTable.SetTitle(fmt.Sprintf(
+		" Trouble codes: %d stored, %d pending, %d permanent across %d module(s) ",
 		stored, pending, permanent, countModules(sorted)))
 }
 
@@ -454,9 +495,10 @@ func (d *Displayer) refreshLive() {
 	defer cancel()
 
 	rpm, rpmErr := d.provider.GetRPM(ctx)
+	volts, voltsErr := d.provider.GetVoltage(ctx)
 	coolant, coolantErr := d.provider.GetCoolantTemp(ctx)
 	oil, oilErr := d.provider.GetOilTemp(ctx)
-	km, kmErr := d.provider.GetTotalKilometers(ctx)
+	km, kmErr := d.provider.GetDistanceSinceClear(ctx)
 	connected := d.provider.IsConnected()
 
 	d.lock()
@@ -465,6 +507,9 @@ func (d *Displayer) refreshLive() {
 	if rpmErr == nil {
 		d.state.rpm = rpm
 	}
+	if voltsErr == nil {
+		d.state.volts = volts
+	}
 	if coolantErr == nil {
 		d.state.coolant = coolant
 	}
@@ -472,11 +517,12 @@ func (d *Displayer) refreshLive() {
 		d.state.oil = oil
 	}
 	if kmErr == nil {
-		d.state.kilometres = km
+		d.state.sinceClear = km
 	}
 	linkChanged := d.state.connected != connected
 	d.state.connected = connected
 	d.state.errs["rpm"] = rpmErr
+	d.state.errs["volts"] = voltsErr
 	d.state.errs["coolant"] = coolantErr
 	d.state.errs["oil"] = oilErr
 	d.state.errs["odometer"] = kmErr
@@ -505,6 +551,24 @@ func value(err error, format string, args ...any) string {
 	return fmt.Sprintf(format, args...)
 }
 
+// voltage colours the reading against what a healthy system does: about 12.6V
+// at rest, 13.5-14.8V with the engine running. Outside that band on either
+// side is worth seeing without having to know the numbers.
+func voltage(s snapshot) string {
+	if s.errs["volts"] != nil {
+		return "-"
+	}
+	switch {
+	case s.volts < 11.8:
+		return fmt.Sprintf("[red]%.1f[white]  flat or discharging", s.volts)
+	case s.volts > 14.9:
+		return fmt.Sprintf("[red]%.1f[white]  overcharging", s.volts)
+	case s.volts > 13.2:
+		return fmt.Sprintf("[green]%.1f[white]  charging", s.volts)
+	}
+	return fmt.Sprintf("%.1f", s.volts)
+}
+
 func (d *Displayer) paintDashboard(s snapshot) {
 	if s.connected {
 		d.dashPages.SwitchToPage("live")
@@ -515,7 +579,8 @@ func (d *Displayer) paintDashboard(s snapshot) {
 	d.rpmText.SetText("  RPM              " + value(s.errs["rpm"], "%d", s.rpm))
 	d.coolantText.SetText("  Coolant (°C)     " + value(s.errs["coolant"], "%.1f", s.coolant))
 	d.oilText.SetText("  Oil temp (°C)    " + value(s.errs["oil"], "%.1f", s.oil))
-	d.odoText.SetText("  Distance (km)    " + value(s.errs["odometer"], "%d", s.kilometres))
+	d.voltsText.SetText("  Battery (V)      " + voltage(s))
+	d.odoText.SetText("  Since clear (km) " + value(s.errs["odometer"], "%d", s.sinceClear))
 
 	dot, state := "[red]\u25cf[white]", "not connected"
 	if s.connected {
@@ -547,13 +612,75 @@ func (d *Displayer) pollDTCs() {
 	}
 }
 
-func (d *Displayer) refreshDTCs() {
-	ctx, cancel := context.WithTimeout(d.ctx, dtcInterval)
+// rescanDTCs is the r key: widen the module list back out and scan, on its own
+// goroutine so the keypress returns immediately.
+//
+// The automatic poll narrows the list to the modules that answered, which is
+// right for a refresh every thirty seconds and wrong here. Someone pressing r
+// is asking about the whole car, and a module that was asleep the first time
+// would otherwise never be looked at again this session.
+func (d *Displayer) rescanDTCs() {
+	go func() {
+		d.provider.RescanModules()
+		d.scanDTCs()
+	}()
+}
+
+// refreshDTCs is the automatic scan, over whatever module list the provider
+// has settled on.
+func (d *Displayer) refreshDTCs() { d.scanDTCs() }
+
+// scanTimeout bounds one walk. It is longer than the interval between walks
+// because a cold scan pays a timeout for every address that turns out not to
+// be fitted, and a scan cut off half way is worse than a slow one.
+const scanTimeout = 90 * time.Second
+
+func (d *Displayer) scanDTCs() {
+	// One scan at a time. Two walks share one serial line and retarget the
+	// adapter under each other, so the second would return nothing useful
+	// and corrupt the first.
+	select {
+	case d.scanning <- struct{}{}:
+	default:
+		d.app.QueueUpdateDraw(func() {
+			d.paintScan("[yellow]A scan is already running")
+		})
+		return
+	}
+	defer func() { <-d.scanning }()
+
+	if !d.provider.IsConnected() {
+		d.app.QueueUpdateDraw(func() {
+			d.paintScan("[yellow]Not connected: press [::b]a[::-] to choose an adapter")
+		})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(d.ctx, scanTimeout)
 	defer cancel()
 
-	codes, err := d.provider.GetDTCs(ctx)
-	if err != nil {
+	started := time.Now()
+	var probed, answered int
+
+	codes, err := d.provider.GetDTCs(ctx, func(p obd.ScanProgress) {
+		probed, answered = p.Index, p.Answered
+		if p.Done {
+			return
+		}
+		d.app.QueueUpdateDraw(func() {
+			d.paintScan(fmt.Sprintf("[yellow]Scanning %s ... [gray]module %d of %d",
+				p.Module, p.Index, p.Total))
+		})
+	})
+
+	// A scan that ran out of time still found whatever it found before the
+	// deadline, and those codes are real. Keep them and say the walk was
+	// cut short rather than throwing the lot away.
+	if err != nil && len(codes) == 0 {
 		slog.Debug("Trouble-code scan failed", "error", err)
+		d.app.QueueUpdateDraw(func() {
+			d.paintScan("[red]Scan failed: " + err.Error())
+		})
 		return
 	}
 
@@ -561,7 +688,46 @@ func (d *Displayer) refreshDTCs() {
 	d.state.codes = codes
 	d.unlock()
 
-	d.app.QueueUpdateDraw(func() { d.renderDTCTable(codes) })
+	elapsed := time.Since(started).Round(time.Second)
+
+	finished := time.Now()
+
+	d.app.QueueUpdateDraw(func() {
+		d.renderDTCTable(codes)
+
+		// Say what was looked at, not just what was found. "No faults"
+		// after a scan that never reached the bus reads the same as
+		// "no faults" after a clean one, and only one is good news.
+		// Report what answered, not just what was asked. An empty table
+		// after four of nine modules replied means five ECUs were never
+		// heard from, which is not the same as a car with no faults.
+		result := fmt.Sprintf("[green]%d of %d module(s) answered in %s: found %d code(s)",
+			answered, probed, elapsed, len(codes))
+		if answered < probed {
+			result = fmt.Sprintf("[yellow]%d of %d module(s) answered in %s: found %d code(s). "+
+				"[gray]The rest did not reply; see the log",
+				answered, probed, elapsed, len(codes))
+		}
+		if err != nil {
+			result = fmt.Sprintf("[red]Scan cut short after %d module(s) in %s (%v): found %d code(s)",
+				probed, elapsed, err, len(codes))
+		}
+		d.paintScan(result + "   [gray]at " + finished.Format("15:04:05"))
+	})
+}
+
+// paintScan writes the row under the code table. It must run on the UI
+// goroutine.
+func (d *Displayer) paintScan(message string) {
+	if d.dtcProgress == nil {
+		return
+	}
+	d.dtcProgress.SetText(" " + message + "[white]")
+}
+
+// paintScanIdle is the row before anything has been scanned.
+func (d *Displayer) paintScanIdle() {
+	d.paintScan("[gray]Not scanned yet")
 }
 
 // wordmark is the name in box-drawing capitals, three rows so it sits level

@@ -39,6 +39,11 @@ func normalizeHex(response string) ([]byte, error) {
 
 	var digits strings.Builder
 	for i, line := range lines {
+		// The adapter prints this while it negotiates a protocol, and it
+		// can share a read with the reply that follows. Every letter in
+		// it except S, R, H, I and N is a hex digit, so keeping it does
+		// not just add noise: it shifts every byte after it.
+		line = strings.ReplaceAll(line, "SEARCHING...", "")
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
@@ -48,6 +53,13 @@ func normalizeHex(response string) ([]byte, error) {
 			line = line[idx+1:]
 		} else if multiframe && i == 0 {
 			continue // total-length header
+		}
+
+		// Anything that is not hex and spaces is the adapter talking to
+		// us rather than relaying the bus. Taking the hex digits out of
+		// such a line yields plausible-looking bytes that are not data.
+		if !isHexLine(line) {
+			continue
 		}
 
 		for _, r := range line {
@@ -72,8 +84,45 @@ func normalizeHex(response string) ([]byte, error) {
 	return b, nil
 }
 
+// isHexLine reports whether a line carries only bus data.
+func isHexLine(line string) bool {
+	for _, r := range line {
+		if !isHexDigit(r) && r != ' ' && r != '\t' {
+			return false
+		}
+	}
+	return true
+}
+
 func isHexDigit(r rune) bool {
 	return (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')
+}
+
+// ParseResponder returns the CAN identifier a reply arrived from.
+//
+// With headers on the adapter prefixes each frame with its sender, which is
+// the only way to learn where a module answers rather than assuming an offset
+// from where it was addressed. The emissions modules are fixed by ISO 15765-4
+// at request+8, but every other address is a manufacturer convention: Renault
+// and Dacia answer at request+0x20, and a filter set to request+8 discards the
+// reply, which looks exactly like a module that is not fitted.
+func ParseResponder(response string) (uint16, error) {
+	for _, line := range strings.FieldsFunc(response, func(r rune) bool {
+		return r == '\r' || r == '\n'
+	}) {
+		line = strings.ReplaceAll(strings.TrimSpace(line), " ", "")
+		// An 11-bit identifier prints as three hex digits. Extended
+		// addressing prints eight, which this does not claim to read.
+		if len(line) < 3 || !isHexLine(line) {
+			continue
+		}
+		id, err := strconv.ParseUint(line[:3], 16, 16)
+		if err != nil {
+			continue
+		}
+		return uint16(id), nil
+	}
+	return 0, fmt.Errorf("%w: no sender identifier in %q", ErrParse, response)
 }
 
 // payload finds the response to a given service and returns the bytes after

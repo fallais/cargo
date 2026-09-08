@@ -221,8 +221,27 @@ func (e *ELM327) initialise(ctx context.Context, timeout time.Duration) error {
 //
 // ATSP0 only arms automatic detection; the adapter does not actually probe
 // until a vehicle request is sent, so mode 01 PID 00 is used as the trigger.
+// searchTimeout bounds the first request after ATSP0.
+//
+// With the protocol left automatic the adapter tries each one in turn, so this
+// single request is the slowest thing the adapter ever does: on a healthy car
+// it has been measured at 4.5 seconds, which left half a second of headroom in
+// the five-second budget every other command gets. A car that answers a little
+// slower than that is not a car we should refuse to talk to.
+const searchTimeout = 15 * time.Second
+
 func (e *ELM327) Negotiate(ctx context.Context) error {
-	if _, err := e.Query(ctx, "0100"); err != nil {
+	if _, err := e.query(ctx, "0100", searchTimeout); err != nil {
+		// The adapter powers from the OBD socket, so it answers happily
+		// while the bus behind it is asleep. Reaching here having got
+		// this far means the adapter is fine and the vehicle is not
+		// listening, which is worth saying rather than making someone
+		// infer it from a timeout.
+		if errors.Is(err, ErrTimeout) || errors.Is(err, ErrUnableToConnect) {
+			return fmt.Errorf("%w: the adapter is responding but the vehicle bus is not. "+
+				"Switch the ignition on (engine running, or at least ignition position II) and try again",
+				ErrUnableToConnect)
+		}
 		return fmt.Errorf("no vehicle bus: %w", err)
 	}
 

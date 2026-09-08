@@ -41,6 +41,39 @@ func TestNormalizeHexMultiFrame(t *testing.T) {
 
 // Regression: with ATS0 in the init sequence these replies arrive unspaced,
 // and the previous whitespace-splitting parsers failed on every one of them.
+// The adapter prints "SEARCHING..." while it negotiates, and it can arrive in
+// the same read as the reply. Every letter in it but S, R, H, I and N is a hex
+// digit, so a naive digit filter both adds bytes and shifts the real ones.
+func TestNormalizeHexIgnoresAdapterChatter(t *testing.T) {
+	for _, in := range []string{
+		"SEARCHING...\r430133",
+		"SEARCHING...430133",
+		"430133\rSEARCHING...",
+	} {
+		got, err := normalizeHex(in)
+		if err != nil {
+			t.Errorf("normalizeHex(%q): %v", in, err)
+			continue
+		}
+		if h, want := hexString(got), "430133"; h != want {
+			t.Errorf("normalizeHex(%q) = %s, want %s", in, h, want)
+		}
+	}
+}
+
+func TestParseDTCsAfterSearching(t *testing.T) {
+	codes, err := ParseDTCs("SEARCHING...\r430201430196", 0x03, dtc.Stored)
+	if err != nil {
+		t.Fatalf("ParseDTCs: %v", err)
+	}
+	if len(codes) != 2 {
+		t.Fatalf("got %d codes, want 2", len(codes))
+	}
+	if got, want := codes[0].FullCode(), "P0143"; got != want {
+		t.Errorf("first code = %s, want %s", got, want)
+	}
+}
+
 func TestParsePIDsWithAndWithoutSpaces(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -200,4 +233,34 @@ func codes(d []dtc.DTC) []string {
 		out[i] = d[i].Code
 	}
 	return out
+}
+
+func TestParseResponder(t *testing.T) {
+	cases := []struct {
+		in   string
+		want uint16
+	}{
+		{"760037F221200000000", 0x760},
+		{"760 03 7F 22 12 00 00", 0x760},
+		{"7E8101462F190555531\r7E821355344434A4335", 0x7E8},
+		{"SEARCHING...\r763037F2212A3A3A3A3", 0x763},
+	}
+	for _, c := range cases {
+		got, err := ParseResponder(c.in)
+		if err != nil {
+			t.Errorf("ParseResponder(%q): %v", c.in, err)
+			continue
+		}
+		if got != c.want {
+			t.Errorf("ParseResponder(%q) = %03X, want %03X", c.in, got, c.want)
+		}
+	}
+}
+
+func TestParseResponderRejectsChatter(t *testing.T) {
+	for _, in := range []string{"NO DATA", "SEARCHING...", "", "OK"} {
+		if got, err := ParseResponder(in); err == nil {
+			t.Errorf("ParseResponder(%q) = %03X, want an error", in, got)
+		}
+	}
 }

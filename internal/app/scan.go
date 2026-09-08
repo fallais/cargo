@@ -136,7 +136,12 @@ func UserCatalogPath() string {
 func report(ctx context.Context, provider obd.OBDProvider, resolver *dtc.Resolver) error {
 	fmt.Printf("Adapter: %s\n\n", provider.Description())
 
-	codes, err := provider.GetDTCs(ctx)
+	// Progress goes to stderr: a walk across every module takes tens of
+	// seconds, and stdout is the report itself, which stays scriptable.
+	codes, err := provider.GetDTCs(ctx, func(p obd.ScanProgress) {
+		fmt.Fprintf(os.Stderr, "\rScanning %-20s (%d/%d)", p.Module, p.Index, p.Total)
+	})
+	fmt.Fprintln(os.Stderr)
 	if err != nil {
 		return fmt.Errorf("read trouble codes: %w", err)
 	}

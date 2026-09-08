@@ -210,3 +210,76 @@ func TestUDSPayloadNeedsSubFunction(t *testing.T) {
 		t.Error("a reply to a different sub-function was accepted")
 	}
 }
+
+// A module asked with a 0xFF mask reports every code it holds a slot for. Only
+// the records whose status says the test actually failed are faults; the rest
+// describe the test, not the component, and one airbag module returns forty of
+// them.
+func TestParseUDSDTCsSkipsRecordsThatAreNotFaults(t *testing.T) {
+	// Two "not tested this cycle" records (0x40) around one confirmed
+	// fault (0x28), as read from a Dacia airbag module.
+	codes, err := ParseUDSDTCs("59027B402004404020 1C40C422002800000000")
+	if err != nil {
+		t.Fatalf("ParseUDSDTCs: %v", err)
+	}
+	if len(codes) != 1 {
+		t.Fatalf("got %d codes, want 1: %+v", len(codes), codes)
+	}
+	if got, want := codes[0].FullCode(), "U0422-00"; got != want {
+		t.Errorf("code = %s, want %s", got, want)
+	}
+	if got, want := codes[0].StatusMask, byte(0x28); got != want {
+		t.Errorf("status = %02X, want %02X", got, want)
+	}
+}
+
+func TestParseUDSDTCsKeepsWarningRecords(t *testing.T) {
+	// Status A8: confirmed, failed since clear, warning lamp requested.
+	codes, err := ParseUDSDTCs("5902B9956023A8")
+	if err != nil {
+		t.Fatalf("ParseUDSDTCs: %v", err)
+	}
+	if len(codes) != 1 {
+		t.Fatalf("got %d codes, want 1", len(codes))
+	}
+	if !codes[0].WarningActive() {
+		t.Error("warning indicator should be active for status A8")
+	}
+}
+
+func TestParseUDSExtendedData(t *testing.T) {
+	// 59 06, code C1A60-7B, status A8, record 01, then the record: an
+	// occurrence count of 12 followed by manufacturer bytes.
+	count, raw, err := ParseUDSExtendedData("59065A607BA8010C0300")
+	if err != nil {
+		t.Fatalf("ParseUDSExtendedData: %v", err)
+	}
+	if count != 12 {
+		t.Errorf("occurrences = %d, want 12", count)
+	}
+	if got, want := len(raw), 3; got != want {
+		t.Errorf("record length = %d, want %d", got, want)
+	}
+}
+
+func TestParseUDSExtendedDataRejectsTruncated(t *testing.T) {
+	for _, in := range []string{"59065A607B", "59065A607BA801", "7F1911"} {
+		if count, _, err := ParseUDSExtendedData(in); err == nil {
+			t.Errorf("ParseUDSExtendedData(%q) = %d, want an error", in, count)
+		}
+	}
+}
+
+func TestParseUDSSnapshot(t *testing.T) {
+	// 59 04, code, status, record 01, two identifiers, then their payload.
+	identifiers, raw, err := ParseUDSSnapshot("59045A607BA80102F1900011")
+	if err != nil {
+		t.Fatalf("ParseUDSSnapshot: %v", err)
+	}
+	if identifiers != 2 {
+		t.Errorf("identifiers = %d, want 2", identifiers)
+	}
+	if len(raw) == 0 {
+		t.Error("snapshot payload should be carried through raw")
+	}
+}

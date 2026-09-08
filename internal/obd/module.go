@@ -9,6 +9,11 @@ type Module struct {
 	Request uint16
 	// Response is what it replies on, used as a receive filter (ATCRA) so
 	// another talkative ECU is not mistaken for this one.
+	//
+	// Zero means "ask the module". Only the emissions addresses have a
+	// response identifier fixed by standard; everywhere else the offset is
+	// a manufacturer convention, and guessing it wrong discards the reply
+	// in a way that is indistinguishable from an absent module.
 	Response uint16
 	// Standard marks the emissions modules ISO 15765-4 guarantees. It also
 	// picks the protocol: those answer OBD-II modes, the rest UDS 0x19.
@@ -36,12 +41,23 @@ var StandardModules = []Module{
 // ExtendedModules are addresses manufacturers commonly use for the
 // non-emissions controllers. They are conventions, not standards, so a
 // non-answer means "not present here" rather than a fault.
+//
+// Response is left zero throughout: where these modules reply is discovered by
+// asking, because the offset differs by make. ISO 15765-4 puts the emissions
+// replies at request+8; PSA and Renault group answer at request+0x20.
+//
+// The names are the usual occupant of each address and not much more. The
+// module reports its own faults either way, so a wrong label costs a column,
+// not a code.
 var ExtendedModules = []Module{
-	{Name: "ABS", Request: 0x760, Response: 0x768},
-	{Name: "Airbag", Request: 0x740, Response: 0x748},
-	{Name: "Body Control", Request: 0x745, Response: 0x74D},
-	{Name: "Instrument Cluster", Request: 0x720, Response: 0x728},
-	{Name: "TPMS", Request: 0x7C0, Response: 0x7C8},
+	{Name: "Airbag", Request: 0x740},
+	{Name: "Module 742", Request: 0x742},
+	{Name: "Module 743", Request: 0x743},
+	{Name: "Body Control", Request: 0x745},
+	{Name: "Module 752", Request: 0x752},
+	{Name: "ABS", Request: 0x760},
+	{Name: "Instrument Cluster", Request: 0x720},
+	{Name: "TPMS", Request: 0x7C0},
 }
 
 // AllModules is the scan order, guaranteed modules first so an interrupted

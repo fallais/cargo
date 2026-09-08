@@ -75,3 +75,23 @@ func applyTheme() {
 func spacer() *tview.Box {
 	return tview.NewBox().SetBackgroundColor(theme.background)
 }
+
+// Focus markers for form fields.
+//
+// A field whose background matches the page has no highlight to show it has
+// the keyboard, and the form's colours are uniform across items - Form.Draw
+// pushes one style onto all of them every frame - so the cue has to live in
+// the label text instead.
+const (
+	focusMark = "> "
+	blurMark  = "  "
+)
+
+func focusedLabel(name string) string { return focusMark + name + "  " }
+func blurredLabel(name string) string { return blurMark + name + "  " }
+
+// markFocus makes a form item show when it holds the keyboard.
+func markFocus(box *tview.Box, name string, setLabel func(string)) {
+	box.SetFocusFunc(func() { setLabel(focusedLabel(name)) })
+	box.SetBlurFunc(func() { setLabel(blurredLabel(name)) })
+}

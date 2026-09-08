@@ -13,84 +13,225 @@ import (
 // The adapter page is where connecting happens. Attaching to a car is not
 // something to do behind the user's back, so it is an explicit act by default
 // and autoconnect is opt-in.
+//
+// The page is one centred card rather than a list beside a detail pane. There
+// is exactly one decision to make here - which adapter, then connect - and a
+// full-width two-column layout made a two-field form look like a file browser.
 
-func (d *Displayer) buildAdapter() tview.Primitive {
-	d.adapterList = tview.NewList().ShowSecondaryText(true)
-	d.adapterList.SetBorder(true).SetTitle(" Adapters ")
-	d.adapterList.SetChangedFunc(func(int, string, string, rune) { d.paintAdapterInfo() })
+// Card geometry. The width is fixed rather than proportional: the card holds
+// one short form, and stretching it across a wide terminal would make two
+// fields look like a file browser. The height is measured, not guessed - see
+// formRows.
+const (
+	adapterCardWidth = 60
+	// adapterItemPadding is the blank line between form rows.
+	adapterItemPadding = 1
+	// adapterInfoRows is the status block under the form, and adapterHintRows
+	// the key reminder under that.
+	adapterInfoRows = 3
+	adapterHintRows = 1
+)
 
-	d.adapterInfo = tview.NewTextView().SetDynamicColors(true)
-	d.adapterInfo.SetBorder(true).SetTitle(" Connection ")
+// formSlack is spare rows added to the measured form height.
+//
+// Getting this wrong is silent and nasty: a form given less room than it needs
+// scrolls to keep the focused item visible, so tabbing to a button pushed the
+// adapter picker off the top of the card and it simply vanished. tview's
+// vertical layout does not lay out quite the way its arithmetic reads, and a
+// couple of spare rows in a centred card cost nothing, so this errs high
+// rather than trying to predict it exactly.
+const formSlack = 2
 
-	help := tview.NewTextView().
-		SetDynamicColors(true).
-		SetText("[::b]enter[::-] connect   [::b]x[::-] disconnect   " +
-			"[::b]s[::-] scan again   [::b]t[::-] autoconnect")
-
-	right := tview.NewFlex().SetDirection(tview.FlexRow)
-	right.AddItem(d.adapterInfo, 0, 1, false)
-	right.AddItem(help, 1, 0, false)
-
-	split := tview.NewFlex()
-	split.AddItem(d.adapterList, 0, 1, true)
-	split.AddItem(right, 0, 2, false)
-
-	d.refreshAdapterList()
-	return split
+// formRows is how many rows a vertical form needs, derived the way tview lays
+// one out: each item's own field height, the padding between them, then a row
+// for the buttons.
+func formRows(f *tview.Form, padding int) int {
+	rows := 0
+	for i := 0; i < f.GetFormItemCount(); i++ {
+		height := f.GetFormItem(i).GetFieldHeight()
+		if height <= 0 {
+			// tview falls back to DefaultFormFieldHeight, which is 5.
+			height = tview.DefaultFormFieldHeight
+		}
+		rows += height + padding
+	}
+	if f.GetButtonCount() > 0 {
+		if padding == 0 {
+			rows++ // tview inserts a blank line before the buttons
+		}
+		rows++
+	}
+	return rows
 }
 
-// refreshAdapterList rescans for devices. Runs on the UI goroutine.
+func (d *Displayer) buildAdapter() tview.Primitive {
+	d.adapterDrop = tview.NewDropDown().SetLabel(blurredLabel("Adapter"))
+	// Keep the open list from running off the card on a short terminal.
+	d.adapterDrop.SetFieldWidth(38)
+	markFocus(d.adapterDrop.Box, "Adapter", func(label string) {
+		d.adapterDrop.SetLabel(label)
+	})
+
+	// The open list is drawn by the dropdown itself rather than the form,
+	// so it needs the palette applied here or it keeps tview's defaults.
+	d.adapterDrop.SetListStyles(
+		tcell.StyleDefault.Background(theme.background).Foreground(theme.text),
+		tcell.StyleDefault.Background(theme.title).Foreground(tcell.ColorBlack))
+
+	d.autoCheck = tview.NewCheckbox().SetLabel(blurredLabel("Autoconnect"))
+	markFocus(d.autoCheck.Box, "Autoconnect", func(label string) {
+		d.autoCheck.SetLabel(label)
+	})
+	d.autoCheck.SetChangedFunc(func(on bool) {
+		if on == d.provider.Autoconnect() {
+			return
+		}
+		d.setAutoconnect(on)
+	})
+
+	d.adapterForm = tview.NewForm().
+		SetButtonsAlign(tview.AlignCenter).
+		SetItemPadding(adapterItemPadding)
+
+	// Grey until focused, then filled amber. A terminal has no pointer, so
+	// which button Enter would press has to be obvious from colour alone.
+	// Black on amber rather than the theme background: the terminal theme
+	// leaves the background as the terminal's own, and using it as a
+	// foreground here would be unreadable against the fill.
+	d.adapterForm.
+		SetButtonStyle(tcell.StyleDefault.
+			Background(theme.background).
+			Foreground(theme.dim)).
+		SetButtonActivatedStyle(tcell.StyleDefault.
+			Background(theme.title).
+			Foreground(tcell.ColorBlack).
+			Bold(true))
+
+	// Fields paint nothing of their own. tview fills them with
+	// ContrastBackgroundColor by default, which put a grey slab behind the
+	// picker in the theme whose whole point is to leave the terminal's own
+	// background alone. Form.Draw pushes these onto every item on each
+	// frame, so they have to be set here and not on the items.
+	d.adapterForm.
+		SetFieldBackgroundColor(theme.background).
+		SetFieldTextColor(theme.text).
+		SetLabelColor(theme.dim)
+	d.adapterForm.AddFormItem(d.adapterDrop)
+	d.adapterForm.AddFormItem(d.autoCheck)
+	d.adapterForm.AddButton("Connect", d.connectSelected)
+	d.adapterForm.AddButton("Disconnect", d.disconnect)
+	d.adapterForm.AddButton("Rescan", d.rescanAdapters)
+
+	d.adapterInfo = tview.NewTextView().SetDynamicColors(true)
+
+	hint := tview.NewTextView().
+		SetDynamicColors(true).
+		SetTextAlign(tview.AlignCenter).
+		SetText("[gray]tab[white] move   [gray]enter[white] choose or press   [gray]space[white] toggle")
+
+	formHeight := formRows(d.adapterForm, adapterItemPadding) + formSlack
+
+	card := tview.NewFlex().SetDirection(tview.FlexRow)
+	card.SetBorder(true).SetTitle(" Connect to a vehicle ")
+	card.AddItem(d.adapterForm, formHeight, 0, true)
+	card.AddItem(d.adapterInfo, adapterInfoRows, 0, false)
+	card.AddItem(hint, adapterHintRows, 0, false)
+
+	// Two rows for the border.
+	cardHeight := formHeight + adapterInfoRows + adapterHintRows + 2
+
+	// Centre the card on both axes by padding it with empty weighted cells.
+	row := tview.NewFlex()
+	row.AddItem(spacer(), 0, 1, false)
+	row.AddItem(card, adapterCardWidth, 0, true)
+	row.AddItem(spacer(), 0, 1, false)
+
+	page := tview.NewFlex().SetDirection(tview.FlexRow)
+	page.AddItem(spacer(), 0, 1, false)
+	page.AddItem(row, cardHeight, 0, true)
+	page.AddItem(spacer(), 0, 1, false)
+
+	d.refreshAdapterList()
+	return page
+}
+
+// refreshAdapterList rescans for devices and repopulates the picker. It runs
+// on the UI goroutine.
 func (d *Displayer) refreshAdapterList() {
-	current := d.adapterList.GetCurrentItem()
+	_, previous := d.adapterDrop.GetCurrentOption()
 	d.adapters = d.provider.Adapters()
-	d.adapterList.Clear()
 
-	for _, a := range d.adapters {
-		marker := "  "
+	options := make([]string, 0, len(d.adapters))
+	selected := 0
+	for i, a := range d.adapters {
+		label := a.Port
+		if a.Detail != "" {
+			label += "  (" + a.Detail + ")"
+		}
 		if a.Connected {
-			marker = "[green]>[white] "
+			label = "* " + label
 		}
-		detail := a.Detail
-		if detail == "" {
-			detail = "no description"
-		}
+		options = append(options, label)
 
-		port := a.Port
-		d.adapterList.AddItem(marker+port, "   "+detail, 0, func() {
-			d.connectTo(port)
-		})
+		// Keep the user's choice across a rescan, and otherwise open on
+		// whatever is already connected.
+		if label == previous || (previous == "" && a.Connected) {
+			selected = i
+		}
 	}
 
-	if len(d.adapters) == 0 {
-		d.adapterList.AddItem("No adapters found", "   press s to scan again", 0, nil)
+	if len(options) == 0 {
+		options = []string{"no adapters found"}
 	}
-	if current < d.adapterList.GetItemCount() {
-		d.adapterList.SetCurrentItem(current)
+
+	// Set the options with no callback: a selection made here is the list
+	// being rebuilt, not the user choosing anything.
+	d.adapterDrop.SetOptions(options, nil)
+	d.adapterDrop.SetCurrentOption(selected)
+
+	if d.autoCheck.IsChecked() != d.provider.Autoconnect() {
+		d.autoCheck.SetChecked(d.provider.Autoconnect())
 	}
 	d.paintAdapterInfo()
 }
 
 func (d *Displayer) paintAdapterInfo() {
-	auto := "[gray]off[white]"
-	if d.provider.Autoconnect() {
-		auto = "[green]on[white]"
-	}
-
-	status := "[red]not connected[white]"
+	status := "[red]●[white] not connected"
 	if d.provider.IsConnected() {
-		status = "[green]connected[white]"
+		status = "[green]●[white] connected"
 	}
 
-	out := "\n"
-	out += fmt.Sprintf("  Status        %s\n", status)
-	out += fmt.Sprintf("  Adapter       %s\n", d.provider.Description())
-	out += fmt.Sprintf("  Autoconnect   %s\n", auto)
-	out += fmt.Sprintf("  Found         %d device(s)\n", len(d.adapters))
+	out := fmt.Sprintf("  %s\n", status)
+	out += fmt.Sprintf("  [gray]%s[white]", d.provider.Description())
 
 	if !d.provider.IsConnected() {
-		out += "\n  [gray]Select a device and press enter.[white]\n"
+		out += fmt.Sprintf("   [gray]%d device(s) found[white]", len(d.adapters))
 	}
 	d.adapterInfo.SetText(out)
+}
+
+// selectedPort returns the port the picker is showing, or "" when there is
+// nothing to connect to.
+func (d *Displayer) selectedPort() string {
+	index, _ := d.adapterDrop.GetCurrentOption()
+	if index < 0 || index >= len(d.adapters) {
+		return ""
+	}
+	return d.adapters[index].Port
+}
+
+func (d *Displayer) connectSelected() {
+	port := d.selectedPort()
+	if port == "" {
+		d.flash("[yellow]No adapter to connect to. Press Rescan.")
+		return
+	}
+	d.connectTo(port)
+}
+
+func (d *Displayer) rescanAdapters() {
+	d.refreshAdapterList()
+	d.flash(fmt.Sprintf("Scanned: %d device(s)", len(d.adapters)))
 }
 
 // connectTo attaches to one device, off the UI goroutine so a slow probe does
@@ -99,7 +240,7 @@ func (d *Displayer) connectTo(port string) {
 	d.flash("Connecting to " + port + "...")
 
 	go func() {
-		ctx, cancel := context.WithTimeout(d.ctx, 30*time.Second)
+		ctx, cancel := context.WithTimeout(d.ctx, 60*time.Second)
 		defer cancel()
 
 		err := d.provider.Connect(ctx, port)
@@ -128,8 +269,7 @@ func (d *Displayer) disconnect() {
 	d.flash("Disconnected")
 }
 
-func (d *Displayer) toggleAutoconnect() {
-	on := !d.provider.Autoconnect()
+func (d *Displayer) setAutoconnect(on bool) {
 	d.provider.SetAutoconnect(on)
 	d.paintAdapterInfo()
 
@@ -146,11 +286,11 @@ func (d *Displayer) onAdapterKey(event *tcell.EventKey) *tcell.EventKey {
 		d.disconnect()
 		return nil
 	case 's', 'S':
-		d.refreshAdapterList()
-		d.flash(fmt.Sprintf("Scanned: %d device(s)", len(d.adapters)))
+		d.rescanAdapters()
 		return nil
 	case 't', 'T':
-		d.toggleAutoconnect()
+		d.setAutoconnect(!d.provider.Autoconnect())
+		d.autoCheck.SetChecked(d.provider.Autoconnect())
 		return nil
 	}
 	return event

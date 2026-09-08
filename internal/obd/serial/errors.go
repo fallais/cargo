@@ -22,6 +22,9 @@ var (
 	ErrLowVoltage      = errors.New("supply voltage too low")
 	ErrParse           = errors.New("cannot parse adapter response")
 	ErrTimeout         = errors.New("timed out waiting for adapter")
+	// ErrBusy means another request holds the adapter. One serial line
+	// carries everything, so this is contention, not a fault.
+	ErrBusy = errors.New("adapter busy")
 )
 
 // statusResponses maps the adapter's text replies onto sentinels. Order
