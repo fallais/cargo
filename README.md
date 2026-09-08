@@ -116,8 +116,6 @@ Rebuild the catalog from the upstream datasets with:
 ./cargo import
 ```
 
-See [docs/dtc-data.md](docs/dtc-data.md) for the data format and why it is CSV.
-
 ## Licence
 
 MIT. See [LICENSE](LICENSE). The bundled trouble-code data comes from
