@@ -53,6 +53,7 @@ go build -o cargo .
 
 ./cargo                 # terminal UI
 ./cargo --no-tui        # one-shot report
+./cargo --vin           # print the VIN and exit
 ```
 
 Keys: `d` dashboard, `c` codes, `v` vehicle, `a` adapter, `q` quit.
@@ -77,6 +78,7 @@ The one-shot report has no picker, so it always connects on its own.
 | `--autoconnect` | attach to the first adapter that answers, without being asked |
 | `--theme` | `terminal` keeps your background, `dark` paints its own |
 | `--no-tui` | print one report and exit |
+| `--vin` | print the VIN alone and exit |
 | `--debug` | verbose logging |
 
 Any flag can also be set via `CARGO_*` environment variables or

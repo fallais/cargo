@@ -27,19 +27,24 @@ type ScanOptions struct {
 	Autoconnect bool
 	Theme       string
 	NoTUI       bool
-	Port        string
-	Baud        int
-	Timeout     time.Duration
-	Make        string
+	// VIN prints the vehicle identification number and exits. Like NoTUI
+	// it never takes the screen, so stdout stays a plain value for scripts.
+	VIN     bool
+	Port    string
+	Baud    int
+	Timeout time.Duration
+	Make    string
 }
 
 // Scan connects to a vehicle and either runs the UI or prints one report.
 func Scan(ctx context.Context, opts ScanOptions) error {
+	oneShot := opts.NoTUI || opts.VIN
+
 	// Move logging off the terminal before anything logs at all. The UI is
 	// about to take the screen, and a line written over it corrupts the
 	// display until the next full repaint. This has to come first: setting
 	// up the provider logs, and that line alone was enough to show.
-	if !opts.NoTUI {
+	if !oneShot {
 		path, err := LogToFile(opts.Debug, LogPath())
 		if err != nil {
 			// Keep going without a log rather than refusing to start, but
@@ -93,7 +98,7 @@ func Scan(ctx context.Context, opts ScanOptions) error {
 		ReadTimeout: opts.Timeout,
 	})
 	// The report has no picker, so it has to attach on its own.
-	provider.SetAutoconnect(opts.Autoconnect || opts.NoTUI)
+	provider.SetAutoconnect(opts.Autoconnect || oneShot)
 
 	// The session context, not a startup one: the provider keeps a
 	// reconnect loop alive on whatever it is given, and a context that
@@ -105,9 +110,12 @@ func Scan(ctx context.Context, opts ScanOptions) error {
 	// connection is fatal there. The UI is different: not having plugged the
 	// adapter in yet is how most sessions begin, and the provider keeps
 	// retrying in the background, so come up and say so on the status line.
-	if opts.NoTUI {
+	if oneShot {
 		if startErr != nil {
 			return startErr
+		}
+		if opts.VIN {
+			return printVIN(ctx, provider)
 		}
 		return report(ctx, provider, resolver)
 	}
@@ -129,6 +137,17 @@ func UserCatalogPath() string {
 		return ""
 	}
 	return filepath.Join(dir, "cargo", "dtc.csv")
+}
+
+// printVIN prints the vehicle identification number alone, so it can be
+// captured by a script without parsing a report around it.
+func printVIN(ctx context.Context, provider obd.OBDProvider) error {
+	vin, err := provider.GetVIN(ctx)
+	if err != nil {
+		return fmt.Errorf("read VIN: %w", err)
+	}
+	fmt.Println(vin)
+	return nil
 }
 
 // report prints a one-shot scan, for scripting and for when the terminal is
