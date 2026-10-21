@@ -101,43 +101,6 @@ fault is in:
   <img src="assets/dtc-anatomy.svg" alt="Anatomy of the trouble code C1A60-7B with status A9: system, who defines it, component, failure type and status" width="880">
 </p>
 
-## Trouble codes
-
-Codes are read from every ECU that answers, and reported with the module they
-came from and how confirmed they are.
-
-The protocol depends on the module. Emissions controllers answer the OBD-II
-modes, giving stored (03), pending (07) and permanent (0A) codes, and are also
-asked over UDS for the faults emissions law does not cover. ABS, airbag, body
-and TPMS controllers answer UDS service `0x19` instead, where each code
-carries a failure type saying how the component failed, so a fault reads as
-`C0035-64` rather than just `C0035`. Older Renault-group modules that refuse
-UDS are read over KWP2000 (`0x17`). A `!` beside the status means the module
-is asking for a warning lamp, and `now` (in the one-shot report) that the
-fault was present when the module was asked.
-
-Descriptions come from an embedded catalog of ~18,000 definitions. A code with
-no entry is still described from its own encoding rather than reported as
-unknown, and manufacturer codes that several marques define differently ask for
-`--make` instead of guessing.
-
-## Vehicle
-
-Around 700 manufacturer codes mean different things on different marques, so
-the tool needs to know which car it is attached to. The vehicle page (`3`)
-keeps a garage of profiles and applies the selected one to every lookup.
-
-Press `r` and it reads the VIN from the car (mode 09 PID 02), decodes the
-manufacturer and model year, and saves the profile. Where the VIN is not
-available, which is common before the 2005 model year, press `m` and pick the
-make. The choice persists in `$XDG_CONFIG_HOME/cargo/garage.json`.
-
-Rebuild the catalog from the upstream datasets with:
-
-```
-./cargo import
-```
-
 ## Licence
 
 MIT. See [LICENSE](LICENSE). The bundled trouble-code data comes from
