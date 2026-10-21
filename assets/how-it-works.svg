@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 440" width="1040" height="440" role="img" aria-label="A diagnostic tool reaches the car's ECUs through an adapter plugged into the OBD-II port. Each ECU sits on the CAN bus, speaks its own protocol and keeps its own fault memory.">
+<title>A diagnostic tool reaches the car's ECUs through an adapter plugged into the OBD-II port. Each ECU sits on the CAN bus, speaks its own protocol and keeps its own fault memory.</title>
+<style>
+  .panel { fill:#f6f8fa; stroke:#d1d9e0; }
+  .card  { fill:#ffffff; stroke:#d1d9e0; }
+  .car   { fill:#0969da; fill-opacity:.04; stroke:#0969da; stroke-opacity:.28; stroke-dasharray:5 4; }
+  .t  { fill:#1f2328; font:600 15px system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif; }
+  .s  { fill:#59636e; font:400 12.5px system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif; }
+  .l  { fill:#59636e; font:500 12px system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif; }
+  .k  { fill:#59636e; font:600 11px system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif; letter-spacing:.06em; }
+  .m  { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-weight:700; }
+  .ink   { fill:#1f2328; }
+  .mute  { fill:#59636e; }
+  .wire  { stroke:#8c959f; stroke-width:1.6; fill:none; }
+  .bus   { stroke:#0969da; stroke-width:4; stroke-linecap:round; }
+  .busfill { fill:#0969da; }
+  .icon  { fill:none; stroke:#59636e; stroke-width:1.6; stroke-linejoin:round; }
+  .h1 { --c:#0969da; } .h2 { --c:#8250df; } .h3 { --c:#1a7f37; }
+  .h4 { --c:#bc4c00; } .h5 { --c:#cf222e; }
+  .tint   { fill:var(--c); fill-opacity:.10; stroke:var(--c); stroke-opacity:.45; }
+  .hue    { fill:var(--c); }
+  .huestroke { stroke:var(--c); stroke-width:1.6; fill:none; }
+  @media (prefers-color-scheme: dark) {
+    .panel { fill:#151b23; stroke:#3d444d; }
+    .card  { fill:#0d1117; stroke:#3d444d; }
+    .car   { fill:#4493f8; fill-opacity:.05; stroke:#4493f8; stroke-opacity:.35; }
+    .t, .ink { fill:#e6edf3; }
+    .s, .l, .k, .mute { fill:#9198a1; }
+    .wire  { stroke:#656c76; }
+    .bus   { stroke:#4493f8; }
+    .busfill { fill:#4493f8; }
+    .icon  { stroke:#9198a1; }
+    .h1 { --c:#4493f8; } .h2 { --c:#ab7df8; } .h3 { --c:#3fb950; }
+    .h4 { --c:#f0883e; } .h5 { --c:#f85149; }
+    .tint { fill-opacity:.14; stroke-opacity:.55; }
+  }
+</style>
+<rect class="panel" x="0.5" y="0.5" width="1039" height="439" rx="16"/>
+<rect class="card" x="28" y="184" width="140" height="96" rx="12"/>
+<rect class="icon" x="84" y="197" width="28" height="19" rx="2.5"/><path class="icon" d="M78 220 h40 l-4 4 h-32 z"/>
+<text class="t" x="98" y="250" text-anchor="middle">Diagnostic tool</text>
+<text class="s" x="98" y="267" text-anchor="middle">laptop or phone</text>
+<rect class="card" x="268" y="184" width="120" height="96" rx="12"/>
+<rect class="icon" x="320" y="196" width="16" height="6" rx="1.5"/><rect class="icon" x="314" y="202" width="28" height="20" rx="4"/><circle class="busfill" cx="335" cy="212" r="2.4"/>
+<text class="t" x="328" y="250" text-anchor="middle">ELM327</text>
+<text class="s" x="328" y="267" text-anchor="middle">adapter</text>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 z" class="mute"/></marker></defs>
+<path class="wire" d="M168 232 H262" marker-end="url(#a)"/>
+<text class="l" x="215" y="222" text-anchor="middle">USB · Bluetooth</text>
+<path class="wire" d="M388 232 H435"/>
+<rect class="car" x="448" y="24" width="564" height="392" rx="16"/>
+<text class="k" x="470" y="48">THE CAR</text>
+<rect class="card" x="435" y="212" width="26" height="40" rx="5"/>
+<circle class="mute" cx="448" cy="223" r="1.6"/>
+<circle class="mute" cx="448" cy="232" r="1.6"/>
+<circle class="mute" cx="448" cy="241" r="1.6"/>
+<text class="l" x="448" y="270" text-anchor="middle">OBD-II</text>
+<text class="l" x="448" y="285" text-anchor="middle">port</text>
+<path class="wire" d="M461 232 H520"/>
+<line class="bus" x1="520" y1="70" x2="520" y2="390"/>
+<text class="k" transform="translate(508 150) rotate(-90)" text-anchor="middle">CAN BUS</text>
+<path class="wire" d="M520 88.0 H560"/><circle class="busfill" cx="520" cy="88.0" r="4"/>
+<rect class="card" x="560" y="60" width="262" height="56" rx="10"/>
+<text class="t" x="576" y="84">Engine</text>
+<text class="s" x="576" y="103">fuel, glow plugs, turbo</text>
+<g class="h4"><rect class="tint" x="703.6" y="70" width="106.4" height="22" rx="11.0"/><text class="hue m" x="756.8" y="85.0" text-anchor="middle" font-size="11.5">OBD-II + UDS</text></g>
+
+<path class="wire" d="M520 160.0 H560"/><circle class="busfill" cx="520" cy="160.0" r="4"/>
+<rect class="card" x="560" y="132" width="262" height="56" rx="10"/>
+<text class="t" x="576" y="156">ABS / ESP</text>
+<text class="s" x="576" y="175">brakes, stability</text>
+<g class="h1"><rect class="tint" x="768.4" y="142" width="41.6" height="22" rx="11.0"/><text class="hue m" x="789.2" y="157.0" text-anchor="middle" font-size="11.5">UDS</text></g>
+
+<path class="wire" d="M520 232.0 H560"/><circle class="busfill" cx="520" cy="232.0" r="4"/>
+<rect class="card" x="560" y="204" width="262" height="56" rx="10"/>
+<text class="t" x="576" y="228">Body control</text>
+<text class="s" x="576" y="247">lights, locks, tyre pressure</text>
+<g class="h1"><rect class="tint" x="768.4" y="214" width="41.6" height="22" rx="11.0"/><text class="hue m" x="789.2" y="229.0" text-anchor="middle" font-size="11.5">UDS</text></g>
+
+<path class="wire" d="M520 304.0 H560"/><circle class="busfill" cx="520" cy="304.0" r="4"/>
+<rect class="card" x="560" y="276" width="262" height="56" rx="10"/>
+<text class="t" x="576" y="300">Airbag</text>
+<text class="s" x="576" y="319">airbags, seatbelts</text>
+<g class="h1"><rect class="tint" x="768.4" y="286" width="41.6" height="22" rx="11.0"/><text class="hue m" x="789.2" y="301.0" text-anchor="middle" font-size="11.5">UDS</text></g>
+
+<path class="wire" d="M520 376.0 H560"/><circle class="busfill" cx="520" cy="376.0" r="4"/>
+<rect class="card" x="560" y="348" width="262" height="56" rx="10"/>
+<text class="t" x="576" y="372">Power steering</text>
+<text class="s" x="576" y="391">steering assist</text>
+<g class="h2"><rect class="tint" x="739.6" y="358" width="70.4" height="22" rx="11.0"/><text class="hue m" x="774.8" y="373.0" text-anchor="middle" font-size="11.5">KWP2000</text></g>
+
+<path class="wire" d="M822 232.0 H852" stroke-dasharray="3 3"/>
+<g class="h5"><rect class="tint" x="852" y="198.0" width="150" height="68" rx="10"/></g>
+<text class="k" x="866" y="219.0">FAULT MEMORY</text>
+<text class="ink m" x="866" y="238.0" font-size="15">C1A60-7B</text>
+<g class="h5"><circle class="hue" cx="870" cy="252.0" r="3.5"/></g>
+<text class="s" x="880" y="256.0">failing now</text>
+</svg>

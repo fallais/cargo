@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 284" width="1000" height="284" role="img" aria-label="Anatomy of the trouble code C1A60-7B with status A9: system, who defines it, component, failure type and status.">
+<title>Anatomy of the trouble code C1A60-7B with status A9: system, who defines it, component, failure type and status.</title>
+<style>
+  .panel { fill:#f6f8fa; stroke:#d1d9e0; }
+  .card  { fill:#ffffff; stroke:#d1d9e0; }
+  .car   { fill:#0969da; fill-opacity:.04; stroke:#0969da; stroke-opacity:.28; stroke-dasharray:5 4; }
+  .t  { fill:#1f2328; font:600 15px system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif; }
+  .s  { fill:#59636e; font:400 12.5px system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif; }
+  .l  { fill:#59636e; font:500 12px system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif; }
+  .k  { fill:#59636e; font:600 11px system-ui,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif; letter-spacing:.06em; }
+  .m  { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-weight:700; }
+  .ink   { fill:#1f2328; }
+  .mute  { fill:#59636e; }
+  .wire  { stroke:#8c959f; stroke-width:1.6; fill:none; }
+  .bus   { stroke:#0969da; stroke-width:4; stroke-linecap:round; }
+  .busfill { fill:#0969da; }
+  .icon  { fill:none; stroke:#59636e; stroke-width:1.6; stroke-linejoin:round; }
+  .h1 { --c:#0969da; } .h2 { --c:#8250df; } .h3 { --c:#1a7f37; }
+  .h4 { --c:#bc4c00; } .h5 { --c:#cf222e; }
+  .tint   { fill:var(--c); fill-opacity:.10; stroke:var(--c); stroke-opacity:.45; }
+  .hue    { fill:var(--c); }
+  .huestroke { stroke:var(--c); stroke-width:1.6; fill:none; }
+  @media (prefers-color-scheme: dark) {
+    .panel { fill:#151b23; stroke:#3d444d; }
+    .card  { fill:#0d1117; stroke:#3d444d; }
+    .car   { fill:#4493f8; fill-opacity:.05; stroke:#4493f8; stroke-opacity:.35; }
+    .t, .ink { fill:#e6edf3; }
+    .s, .l, .k, .mute { fill:#9198a1; }
+    .wire  { stroke:#656c76; }
+    .bus   { stroke:#4493f8; }
+    .busfill { fill:#4493f8; }
+    .icon  { stroke:#9198a1; }
+    .h1 { --c:#4493f8; } .h2 { --c:#ab7df8; } .h3 { --c:#3fb950; }
+    .h4 { --c:#f0883e; } .h5 { --c:#f85149; }
+    .tint { fill-opacity:.14; stroke-opacity:.55; }
+  }
+</style>
+<rect class="panel" x="0.5" y="0.5" width="999" height="283" rx="16"/>
+<g class="h1"><rect class="tint" x="304.0" y="36" width="44" height="58" rx="12"/><text class="hue m" x="326.0" y="76" text-anchor="middle" font-size="32">C</text></g>
+<g class="h2"><rect class="tint" x="356.0" y="36" width="44" height="58" rx="12"/><text class="hue m" x="378.0" y="76" text-anchor="middle" font-size="32">1</text></g>
+<g class="h3"><rect class="tint" x="408.0" y="36" width="96" height="58" rx="12"/><text class="hue m" x="456.0" y="76" text-anchor="middle" font-size="32">A60</text></g>
+<text class="mute m" x="515.0" y="75" text-anchor="middle" font-size="28">-</text>
+<g class="h4"><rect class="tint" x="526.0" y="36" width="70" height="58" rx="12"/><text class="hue m" x="561.0" y="76" text-anchor="middle" font-size="32">7B</text></g>
+<text class="mute m" x="611.0" y="75" text-anchor="middle" font-size="28">·</text>
+<g class="h5"><rect class="tint" x="626.0" y="36" width="70" height="58" rx="12"/><text class="hue m" x="661.0" y="76" text-anchor="middle" font-size="32">A9</text></g>
+<g class="h1"><path class="huestroke" d="M326.0 94 C326.0 124 116.0 120 116.0 150"/><circle class="hue" cx="326.0" cy="94" r="3"/></g>
+<rect class="card" x="28.0" y="150" width="176" height="116" rx="12"/>
+<g class="h1"><text class="hue m" x="116.0" y="180" text-anchor="middle" font-size="18">C</text></g>
+<text class="t" x="116.0" y="206" text-anchor="middle" font-size="14">System</text>
+<text class="s" x="116.0" y="229" text-anchor="middle">P powertrain · C chassis</text>
+<text class="s" x="116.0" y="247" text-anchor="middle">B body · U network</text>
+<g class="h2"><path class="huestroke" d="M378.0 94 C378.0 124 308.0 120 308.0 150"/><circle class="hue" cx="378.0" cy="94" r="3"/></g>
+<rect class="card" x="220.0" y="150" width="176" height="116" rx="12"/>
+<g class="h2"><text class="hue m" x="308.0" y="180" text-anchor="middle" font-size="18">1</text></g>
+<text class="t" x="308.0" y="206" text-anchor="middle" font-size="14">Who defines it</text>
+<text class="s" x="308.0" y="229" text-anchor="middle">0 the standard (SAE)</text>
+<text class="s" x="308.0" y="247" text-anchor="middle">1 the manufacturer</text>
+<g class="h3"><path class="huestroke" d="M456.0 94 C456.0 124 500.0 120 500.0 150"/><circle class="hue" cx="456.0" cy="94" r="3"/></g>
+<rect class="card" x="412.0" y="150" width="176" height="116" rx="12"/>
+<g class="h3"><text class="hue m" x="500.0" y="180" text-anchor="middle" font-size="18">A60</text></g>
+<text class="t" x="500.0" y="206" text-anchor="middle" font-size="14">Component</text>
+<text class="s" x="500.0" y="229" text-anchor="middle">which part or function</text>
+<text class="s" x="500.0" y="247" text-anchor="middle">here: tyre pressure</text>
+<g class="h4"><path class="huestroke" d="M561.0 94 C561.0 124 692.0 120 692.0 150"/><circle class="hue" cx="561.0" cy="94" r="3"/></g>
+<rect class="card" x="604.0" y="150" width="176" height="116" rx="12"/>
+<g class="h4"><text class="hue m" x="692.0" y="180" text-anchor="middle" font-size="18">7B</text></g>
+<text class="t" x="692.0" y="206" text-anchor="middle" font-size="14">Failure type</text>
+<text class="s" x="692.0" y="229" text-anchor="middle">how it failed</text>
+<text class="s" x="692.0" y="247" text-anchor="middle">7B: low fluid level</text>
+<g class="h5"><path class="huestroke" d="M661.0 94 C661.0 124 884.0 120 884.0 150"/><circle class="hue" cx="661.0" cy="94" r="3"/></g>
+<rect class="card" x="796.0" y="150" width="176" height="116" rx="12"/>
+<g class="h5"><text class="hue m" x="884.0" y="180" text-anchor="middle" font-size="18">A9</text></g>
+<text class="t" x="884.0" y="206" text-anchor="middle" font-size="14">Status</text>
+<text class="s" x="884.0" y="229" text-anchor="middle">failing now, confirmed,</text>
+<text class="s" x="884.0" y="247" text-anchor="middle">warning lamp requested</text>
+</svg>

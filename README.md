@@ -84,6 +84,23 @@ The one-shot report has no picker, so it always connects on its own.
 Any flag can also be set via `CARGO_*` environment variables or
 `$XDG_CONFIG_HOME/cargo/cargo.yaml`.
 
+## How it works
+
+A car is a network of computers, the ECUs, one per system. Each keeps its own
+fault memory and speaks its own protocol. A diagnostic tool reaches them
+through an adapter plugged into the OBD-II port, and asks each one in turn.
+
+<p align="center">
+  <img src="assets/how-it-works.svg" alt="A diagnostic tool reaches the car's ECUs through an ELM327 adapter in the OBD-II port; each ECU sits on the CAN bus, speaks its own protocol and keeps its own fault memory" width="880">
+</p>
+
+Each code says which system, how the component failed, and what state the
+fault is in:
+
+<p align="center">
+  <img src="assets/dtc-anatomy.svg" alt="Anatomy of the trouble code C1A60-7B with status A9: system, who defines it, component, failure type and status" width="880">
+</p>
+
 ## Trouble codes
 
 Codes are read from every ECU that answers, and reported with the module they
