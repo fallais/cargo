@@ -22,37 +22,61 @@ import (
 // Rather than trusting any particular spacing, strip the framing and keep the
 // hex digits. Callers must run responseError first: status replies like
 // "NO DATA" contain hex digits and would decode into plausible-looking rubbish.
+//
+// The length line is honoured, not just skipped. The last frame is padded out
+// to eight bytes, and some ECUs pad with FF rather than 00: kept, that padding
+// decodes as a trouble code of its own.
 func normalizeHex(response string) ([]byte, error) {
 	lines := strings.FieldsFunc(response, func(r rune) bool {
 		return r == '\r' || r == '\n'
 	})
-
-	// A continuation ordinal anywhere means the first line is the total
-	// length rather than data.
-	multiframe := false
-	for _, line := range lines {
-		if strings.Contains(line, ":") {
-			multiframe = true
-			break
-		}
-	}
-
-	var digits strings.Builder
 	for i, line := range lines {
 		// The adapter prints this while it negotiates a protocol, and it
 		// can share a read with the reply that follows. Every letter in
 		// it except S, R, H, I and N is a hex digit, so keeping it does
 		// not just add noise: it shifts every byte after it.
 		line = strings.ReplaceAll(line, "SEARCHING...", "")
-		line = strings.TrimSpace(line)
+		lines[i] = strings.TrimSpace(line)
+	}
+
+	var (
+		digits strings.Builder
+		// frames collects one multi-frame message, which is cut to its
+		// declared length once the message ends.
+		frames   strings.Builder
+		declared = -1
+	)
+	endMessage := func() {
+		message := frames.String()
+		if declared >= 0 && len(message) > 2*declared {
+			message = message[:2*declared]
+		}
+		digits.WriteString(message)
+		frames.Reset()
+		declared = -1
+	}
+
+	for i, line := range lines {
 		if line == "" {
 			continue
 		}
 
-		if idx := strings.IndexByte(line, ':'); idx >= 0 {
+		idx := strings.IndexByte(line, ':')
+		if idx < 0 {
+			endMessage()
+
+			// A bare line directly ahead of the first continuation is
+			// that message's length. It is usually the first line, but
+			// not always: a module that first answers "response
+			// pending" puts that reply ahead of it in the same read.
+			if next := nextNonEmpty(lines, i+1); strings.HasPrefix(next, "0:") {
+				if n, err := strconv.ParseUint(line, 16, 16); err == nil {
+					declared = int(n)
+					continue
+				}
+			}
+		} else {
 			line = line[idx+1:]
-		} else if multiframe && i == 0 {
-			continue // total-length header
 		}
 
 		// Anything that is not hex and spaces is the adapter talking to
@@ -62,12 +86,17 @@ func normalizeHex(response string) ([]byte, error) {
 			continue
 		}
 
+		target := &digits
+		if idx >= 0 {
+			target = &frames
+		}
 		for _, r := range line {
 			if isHexDigit(r) {
-				digits.WriteRune(r)
+				target.WriteRune(r)
 			}
 		}
 	}
+	endMessage()
 
 	s := digits.String()
 	if s == "" {
@@ -82,6 +111,16 @@ func normalizeHex(response string) ([]byte, error) {
 		return nil, fmt.Errorf("%w: %v", ErrParse, err)
 	}
 	return b, nil
+}
+
+// nextNonEmpty returns the first non-blank line at or after start.
+func nextNonEmpty(lines []string, start int) string {
+	for _, line := range lines[start:] {
+		if line != "" {
+			return line
+		}
+	}
+	return ""
 }
 
 // isHexLine reports whether a line carries only bus data.

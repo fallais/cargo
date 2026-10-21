@@ -264,3 +264,53 @@ func TestParseResponderRejectsChatter(t *testing.T) {
 		}
 	}
 }
+
+// The last frame is padded to eight bytes. This body controller pads with FF,
+// and kept, the padding decoded as a fault "U3FFF-FF" of its own. The length
+// line says where the message ends.
+func TestNormalizeHexHonoursDeclaredLength(t *testing.T) {
+	got, err := normalizeHex("007\r0:5902B9C1A607\r1:BA9FFFFFFFFFFF")
+	if err != nil {
+		t.Fatalf("normalizeHex: %v", err)
+	}
+	if h, want := hexString(got), "5902B9C1A607BA"; h != want {
+		t.Errorf("normalizeHex = %s, want %s", h, want)
+	}
+}
+
+// A module that first asks for more time puts that reply ahead of the length
+// line, which therefore is not the first line. Read as data, it shifted every
+// byte after it.
+func TestNormalizeHexLengthAfterPending(t *testing.T) {
+	got, err := normalizeHex("7F1978\r00A\r0:5902FF038013\r1:40038011AAAAAA")
+	if err != nil {
+		t.Fatalf("normalizeHex: %v", err)
+	}
+	if h, want := hexString(got), "7F1978"+"5902FF03801340038011"; h != want {
+		t.Errorf("normalizeHex = %s, want %s", h, want)
+	}
+}
+
+// Continuation ordinals wrap from F back to 0. The second "0:" continues the
+// message; it does not start one.
+func TestNormalizeHexOrdinalWrap(t *testing.T) {
+	var in, want string
+	in = "075\r"
+	for i := 0; i < 17; i++ {
+		in += string("0123456789ABCDEF"[i%16]) + ":"
+		if i == 0 {
+			in += "112233445566\r"
+			want += "112233445566"
+			continue
+		}
+		in += "11223344556677\r"
+		want += "11223344556677"
+	}
+	got, err := normalizeHex(in)
+	if err != nil {
+		t.Fatalf("normalizeHex: %v", err)
+	}
+	if h := hexString(got); h != want[:2*0x75] {
+		t.Errorf("normalizeHex = %s (%d bytes), want %d bytes", h, len(got), 0x75)
+	}
+}
