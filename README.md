@@ -90,11 +90,14 @@ Codes are read from every ECU that answers, and reported with the module they
 came from and how confirmed they are.
 
 The protocol depends on the module. Emissions controllers answer the OBD-II
-modes, giving stored (03), pending (07) and permanent (0A) codes. ABS, airbag,
-body and TPMS controllers answer UDS service `0x19` instead, where each code
+modes, giving stored (03), pending (07) and permanent (0A) codes, and are also
+asked over UDS for the faults emissions law does not cover. ABS, airbag, body
+and TPMS controllers answer UDS service `0x19` instead, where each code
 carries a failure type saying how the component failed, so a fault reads as
-`C0035-64` rather than just `C0035`. A `!` beside the status means the module
-is asking for a warning lamp.
+`C0035-64` rather than just `C0035`. Older Renault-group modules that refuse
+UDS are read over KWP2000 (`0x17`). A `!` beside the status means the module
+is asking for a warning lamp, and `now` (in the one-shot report) that the
+fault was present when the module was asked.
 
 Descriptions come from an embedded catalog of ~18,000 definitions. A code with
 no entry is still described from its own encoding rather than reported as

@@ -331,3 +331,9 @@ func statusFromMask(mask byte) Status {
 func (d DTC) WarningActive() bool {
 	return d.StatusMask&StatusWarningRequested != 0
 }
+
+// FailingNow reports whether the fault was present when the module was asked,
+// as opposed to a confirmed fault that has since stopped occurring.
+func (d DTC) FailingNow() bool {
+	return d.StatusMask&StatusTestFailed != 0
+}

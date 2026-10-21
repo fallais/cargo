@@ -140,6 +140,8 @@ func TestUDSNegativeResponses(t *testing.T) {
 		{"7F 19 33", ErrUDSSecurity},
 		{"7F 19 31", ErrUDSOutOfRange},
 		{"7F 19 21", ErrUDSBusy},
+		{"7F 19 7F", ErrUDSWrongSession},
+		{"7F 19 80", ErrUDSWrongSession},
 	} {
 		if _, err := ParseUDSDTCs(tc.in); !errors.Is(err, tc.want) {
 			t.Errorf("ParseUDSDTCs(%q) err = %v, want %v", tc.in, err, tc.want)
@@ -281,5 +283,66 @@ func TestParseUDSSnapshot(t *testing.T) {
 	}
 	if len(raw) == 0 {
 		t.Error("snapshot payload should be carried through raw")
+	}
+}
+
+// Replies read from a 2015 Dacia Sandero, kept whole: they exercise the length
+// line, FF padding, ordinal wrap and a pending reply ahead of the answer at
+// once, which is the combination that hid faults on the real car.
+const (
+	sanderoBodyControl = "087\r0:5902B9950414\r1:10951014109511\r2:14109512141095\r" +
+		"3:13141095141410\r4:95201210952014\r5:10955012109550\r6:14109571011095\r" +
+		"7:71151095711110\r8:95706810953018\r9:28953118289560\rA:23A8956123A895\r" +
+		"B:62231095622410\rC:95A06428956804\rD:105A607BA95A82\rE:68A95A8368A95A\r" +
+		"F:727AA85A737A10\r0:5A757AA95A861C\r1:105A8655105A86\r2:96109505011095\r" +
+		"3:722910FFFFFFFF"
+	sanderoEngine = "7F1978\r073\r0:5902FF038013\r1:40038011400380\r2:12402263215022\r" +
+		"3:63225001902440\r4:083329281525F3\r5:28056429280380\r6:96600480124020\r" +
+		"7:02944011301C40\r8:06451240040A17\r9:4011351C600101\rA:22401489174014\r" +
+		"B:8E224000956440\rC:025A1340025A11\rD:40158964281515\rE:73501515725004\r" +
+		"F:00F540158A2950\r0:15892928AAAAAA"
+)
+
+func TestParseUDSDTCsSanderoBodyControl(t *testing.T) {
+	codes, err := ParseUDSDTCs(sanderoBodyControl)
+	if err != nil {
+		t.Fatalf("ParseUDSDTCs: %v", err)
+	}
+
+	want := []string{"B1530-18", "B1531-18", "B1560-23", "B1561-23", "B15A0-64",
+		"C1A60-7B", "C1A82-68", "C1A83-68", "C1A72-7A", "C1A75-7A"}
+	if len(codes) != len(want) {
+		t.Fatalf("got %d codes, want %d: %v", len(codes), len(want), codes)
+	}
+	for i, c := range codes {
+		if c.FullCode() != want[i] {
+			t.Errorf("code %d = %s, want %s", i, c.FullCode(), want[i])
+		}
+	}
+
+	// C1A60 is the live one, and its module wants the lamp lit.
+	if c := codes[5]; !c.FailingNow() || !c.WarningActive() {
+		t.Errorf("%s: failing now %v, lamp %v; want both", c.FullCode(), c.FailingNow(), c.WarningActive())
+	}
+	// B1530 is confirmed history: neither.
+	if c := codes[0]; c.FailingNow() || c.WarningActive() {
+		t.Errorf("%s: failing now %v, lamp %v; want neither", c.FullCode(), c.FailingNow(), c.WarningActive())
+	}
+}
+
+func TestParseUDSDTCsSanderoEngine(t *testing.T) {
+	codes, err := ParseUDSDTCs(sanderoEngine)
+	if err != nil {
+		t.Fatalf("ParseUDSDTCs: %v", err)
+	}
+
+	want := []string{"P0833-29", "P1525-F3", "P0564-29", "P0380-96", "P1135-1C", "P1589-64", "P1589-29"}
+	if len(codes) != len(want) {
+		t.Fatalf("got %d codes, want %d: %v", len(codes), len(want), codes)
+	}
+	for i, c := range codes {
+		if c.FullCode() != want[i] {
+			t.Errorf("code %d = %s, want %s", i, c.FullCode(), want[i])
+		}
 	}
 }

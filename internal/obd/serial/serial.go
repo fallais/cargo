@@ -546,16 +546,20 @@ func (s *SerialOBD) RescanModules() {
 // implementing the same mask bits as its neighbours.
 const udsStatusMask byte = 0xFF
 
-// udsResponseTimeout is roughly 400ms in the adapter's four-millisecond units.
-// Chassis and body modules answer far more slowly than the powertrain.
-const udsResponseTimeout byte = 0x64
+// udsResponseTimeout is roughly a second in the adapter's four-millisecond
+// units. Chassis and body modules answer far more slowly than the powertrain,
+// and a Dacia airbag module that is silent at 400ms answers well inside this.
+// It only ever applies to a module already known to be there, so the wait is
+// never spent on an empty address.
+const udsResponseTimeout byte = 0xFF
 
 // readModule points the adapter at one ECU and reads its codes.
 //
-// Which protocol to use is decided by what the module is, not by trying both:
-// the emissions controllers answer the OBD-II modes, and everything else
-// speaks UDS. Asking an airbag module for mode 03 gets silence, and asking the
-// engine for UDS 0x19 disturbs it for no gain.
+// The emissions controllers answer the OBD-II modes and everything else speaks
+// a manufacturer protocol, UDS or the KWP2000 that preceded it. The engine is
+// asked both ways: the modes only cover what emissions law requires, and the
+// controller keeps its other faults - glow plugs, clutch switch, cruise
+// control - where only a UDS read finds them.
 func (s *SerialOBD) readModule(ctx context.Context, elm *ELM327, m *obd.Module) ([]dtc.DTC, error) {
 	if err := elm.SetHeader(ctx, m.Request); err != nil {
 		return nil, fmt.Errorf("address %s: %w", m, err)
@@ -565,7 +569,11 @@ func (s *SerialOBD) readModule(ctx context.Context, elm *ELM327, m *obd.Module) 
 		if err := elm.SetReceiveFilter(ctx, m.Response); err != nil {
 			return nil, fmt.Errorf("filter %s: %w", m, err)
 		}
-		return s.readModes(ctx, elm, m.Name)
+		codes, err := s.readModes(ctx, elm, m.Name)
+		if err != nil {
+			return nil, err
+		}
+		return mergeCodes(codes, s.readStandardExtra(ctx, elm, m.Name)), nil
 	}
 
 	// Locate the module first, while nothing is configured for it: with
@@ -618,7 +626,7 @@ func (s *SerialOBD) readModule(ctx context.Context, elm *ELM327, m *obd.Module) 
 		}
 	}()
 
-	codes, err := s.readDTCsUDS(ctx, elm, m.Name, udsStatusMask)
+	codes, err := s.readManufacturerDTCs(ctx, elm, m.Name, true)
 	if err == nil {
 		return codes, nil
 	}
@@ -628,11 +636,60 @@ func (s *SerialOBD) readModule(ctx context.Context, elm *ELM327, m *obd.Module) 
 	// that still answers the OBD-II modes. Falling back costs one request
 	// on a module that has already declined the first choice.
 	if errors.Is(err, ErrUDSNotSupported) {
-		slog.Debug("Module rejected UDS, trying the OBD-II modes",
+		slog.Debug("Module rejected UDS and KWP2000, trying the OBD-II modes",
 			"module", m.Name)
 		return s.readModes(ctx, elm, m.Name)
 	}
 	return nil, err
+}
+
+// readManufacturerDTCs reads a module's faults over UDS, falling back to
+// KWP2000 for a module that refuses the UDS service.
+func (s *SerialOBD) readManufacturerDTCs(ctx context.Context, elm *ELM327, module string, allowSession bool) ([]dtc.DTC, error) {
+	codes, err := s.readDTCsUDS(ctx, elm, module, udsStatusMask, allowSession)
+	if err == nil || !needsSession(err) {
+		return codes, err
+	}
+
+	slog.Debug("Module rejected UDS, trying KWP2000", "module", module, "error", err)
+	return s.readDTCsKWP(ctx, elm, module, allowSession)
+}
+
+// readStandardExtra asks an emissions controller for the faults the OBD-II
+// modes do not carry. It never changes the module's session, and a refusal is
+// only logged: the modes have already answered, so nothing is lost.
+func (s *SerialOBD) readStandardExtra(ctx context.Context, elm *ELM327, module string) []dtc.DTC {
+	if err := elm.SetResponseTimeout(ctx, udsResponseTimeout); err != nil {
+		slog.Debug("Could not extend the adapter timeout", "error", err)
+	}
+	defer func() {
+		if err := elm.SetResponseTimeout(ctx, defaultResponseTimeout); err != nil {
+			slog.Debug("Could not restore the adapter timeout", "error", err)
+		}
+	}()
+
+	codes, err := s.readManufacturerDTCs(ctx, elm, module, false)
+	if err != nil {
+		slog.Debug("No manufacturer fault memory", "module", module, "error", err)
+		return nil
+	}
+	return codes
+}
+
+// mergeCodes adds the manufacturer read to the OBD-II one, dropping codes the
+// modes already reported. Those keep their mode-derived status, which is the
+// only place a permanent code shows up.
+func mergeCodes(modes, extra []dtc.DTC) []dtc.DTC {
+	seen := make(map[string]bool, len(modes))
+	for _, c := range modes {
+		seen[c.Code] = true
+	}
+	for _, c := range extra {
+		if !seen[c.Code] {
+			modes = append(modes, c)
+		}
+	}
+	return modes
 }
 
 // udsLocateRequest reads the VIN by identifier. It is sent only to see whether

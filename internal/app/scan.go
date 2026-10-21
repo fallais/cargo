@@ -186,6 +186,7 @@ func report(ctx context.Context, provider obd.OBDProvider, resolver *dtc.Resolve
 	}
 	sort.Strings(modules)
 
+	var failing, lamps int
 	for _, module := range modules {
 		fmt.Printf("%s\n", module)
 		for _, c := range byModule[module] {
@@ -193,11 +194,42 @@ func report(ctx context.Context, provider obd.OBDProvider, resolver *dtc.Resolve
 			if failure := c.FailureTypeName(); failure != "" {
 				description = fmt.Sprintf("%s (%s)", description, failure)
 			}
-			fmt.Printf("  %-9s  %-10s  %s\n", c.FullCode(), c.Status, description)
+			if c.FailingNow() {
+				failing++
+			}
+			if c.WarningActive() {
+				lamps++
+			}
+			fmt.Printf("  %-9s  %-9s  %-5s  %s\n", c.FullCode(), c.Status, flags(c), description)
 		}
 		fmt.Println()
 	}
 
-	fmt.Printf("%d code(s) across %d module(s).\n", len(codes), len(modules))
+	fmt.Printf("%d code(s) across %d module(s)", len(codes), len(modules))
+	if failing > 0 || lamps > 0 {
+		fmt.Printf(": %d failing now, %d asking for a warning lamp", failing, lamps)
+	}
+	fmt.Println(".")
+	if failing > 0 || lamps > 0 {
+		fmt.Println("now = present when the module was asked; ! = the module is asking for a warning lamp.")
+	}
 	return nil
+}
+
+// flags marks what a UDS status byte says beyond stored or pending: whether
+// the fault is happening right now, and whether its module wants a lamp lit.
+// Those are the codes behind whatever is showing on the dashboard, and without
+// them a live fault reads exactly like one from last year.
+func flags(c dtc.DTC) string {
+	out := ""
+	if c.FailingNow() {
+		out += "now"
+	}
+	if c.WarningActive() {
+		if out != "" {
+			out += " "
+		}
+		out += "!"
+	}
+	return out
 }

@@ -15,8 +15,9 @@ type Module struct {
 	// a manufacturer convention, and guessing it wrong discards the reply
 	// in a way that is indistinguishable from an absent module.
 	Response uint16
-	// Standard marks the emissions modules ISO 15765-4 guarantees. It also
-	// picks the protocol: those answer OBD-II modes, the rest UDS 0x19.
+	// Standard marks the emissions modules ISO 15765-4 guarantees. Those
+	// answer the OBD-II modes, and may keep further faults over UDS; the
+	// rest answer UDS 0x19 or KWP2000 only.
 	Standard bool
 }
 

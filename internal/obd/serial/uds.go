@@ -40,12 +40,18 @@ const (
 	nrcRequestOutOfRange       byte = 0x31
 	nrcSecurityAccessDenied    byte = 0x33
 	nrcResponsePending         byte = 0x78
+	// The two protocols number "not in this session" differently. A Renault
+	// power steering module answers every read with the KWP2000 0x80 until
+	// it is put into a diagnostic session.
+	nrcWrongSessionUDS byte = 0x7F
+	nrcWrongSessionKWP byte = 0x80
 )
 
 // Errors a UDS request can produce.
 var (
 	ErrUDSNotSupported  = errors.New("module does not support this UDS service")
 	ErrUDSConditions    = errors.New("module refused: conditions not correct")
+	ErrUDSWrongSession  = errors.New("module refused: not available in this session")
 	ErrUDSSecurity      = errors.New("module refused: security access required")
 	ErrUDSOutOfRange    = errors.New("module refused: request out of range")
 	ErrUDSBusy          = errors.New("module busy")
@@ -61,6 +67,8 @@ func udsError(service, nrc byte) error {
 		return fmt.Errorf("%w (service %02X, NRC %02X)", ErrUDSNotSupported, service, nrc)
 	case nrcConditionsNotCorrect:
 		return ErrUDSConditions
+	case nrcWrongSessionUDS, nrcWrongSessionKWP:
+		return ErrUDSWrongSession
 	case nrcSecurityAccessDenied:
 		return ErrUDSSecurity
 	case nrcRequestOutOfRange:
@@ -169,10 +177,14 @@ const faultBits = dtc.StatusTestFailed | dtc.StatusTestFailedThisCycle |
 // statusMask selects which codes to report. 0xFF asks for everything and lets
 // the per-code status byte do the filtering, which is more portable than
 // trusting every ECU to implement the same subset of mask bits.
-func (s *SerialOBD) readDTCsUDS(ctx context.Context, elm *ELM327, module string, statusMask byte) ([]dtc.DTC, error) {
+//
+// allowSession permits a retry in an extended session. It is off for the
+// engine: a fault read changes nothing, but a session change on a running
+// powertrain controller is not something to do for a second opinion.
+func (s *SerialOBD) readDTCsUDS(ctx context.Context, elm *ELM327, module string, statusMask byte, allowSession bool) ([]dtc.DTC, error) {
 	request := fmt.Sprintf("%02X%02X%02X", udsReadDTCInformation, subReportDTCByStatusMask, statusMask)
 
-	codes, err := s.udsAttempt(ctx, elm, request)
+	codes, err := s.udsAttempt(ctx, elm, request, ParseUDSDTCs)
 	if err == nil {
 		return attributeModule(codes, module), nil
 	}
@@ -181,7 +193,7 @@ func (s *SerialOBD) readDTCsUDS(ctx context.Context, elm *ELM327, module string,
 	// extended session. Entering one is a state change on the ECU, so it is
 	// a fallback rather than the default: a module that answers in the
 	// default session is never disturbed.
-	if !errors.Is(err, ErrUDSNotSupported) && !errors.Is(err, ErrUDSConditions) {
+	if !allowSession || !needsSession(err) {
 		return nil, err
 	}
 
@@ -199,11 +211,20 @@ func (s *SerialOBD) readDTCsUDS(ctx context.Context, elm *ELM327, module string,
 		}
 	}()
 
-	codes, err = s.udsAttempt(ctx, elm, request)
+	codes, err = s.udsAttempt(ctx, elm, request, ParseUDSDTCs)
 	if err != nil {
 		return nil, err
 	}
 	return attributeModule(codes, module), nil
+}
+
+// needsSession reports whether a refusal might be lifted by a diagnostic
+// session. A module that does not know the service at all sometimes only
+// means "not in this session", so that counts too.
+func needsSession(err error) bool {
+	return errors.Is(err, ErrUDSNotSupported) ||
+		errors.Is(err, ErrUDSConditions) ||
+		errors.Is(err, ErrUDSWrongSession)
 }
 
 // udsAttempt sends one request, retrying while the module asks for more time.
@@ -211,7 +232,7 @@ func (s *SerialOBD) readDTCsUDS(ctx context.Context, elm *ELM327, module string,
 // A module that answers 0x78 is working on it, and the real reply may land
 // after the adapter has already returned. Re-reading is the only way to
 // collect it.
-func (s *SerialOBD) udsAttempt(ctx context.Context, elm *ELM327, request string) ([]dtc.DTC, error) {
+func (s *SerialOBD) udsAttempt(ctx context.Context, elm *ELM327, request string, parse func(string) ([]dtc.DTC, error)) ([]dtc.DTC, error) {
 	const maxPending = 3
 
 	var lastErr error
@@ -226,7 +247,7 @@ func (s *SerialOBD) udsAttempt(ctx context.Context, elm *ELM327, request string)
 			return nil, err
 		}
 
-		codes, err := ParseUDSDTCs(response)
+		codes, err := parse(response)
 		if err == nil {
 			return codes, nil
 		}
@@ -310,9 +331,10 @@ func (s *SerialOBD) DTCDetail(ctx context.Context, code dtc.DTC) (obd.DTCDetail,
 		return detail, fmt.Errorf("%w: no module named %q in the last scan",
 			ErrNoData, code.Module)
 	}
-	if module.Standard {
-		// The emissions modules answer mode 02 for freeze-frame data, not
-		// service 0x19. Saying so beats sending a request that cannot work.
+	if module.Standard && !code.HasFailureType {
+		// A code from the OBD-II modes has its freeze frame in mode 02,
+		// not service 0x19. Saying so beats sending a request that cannot
+		// work. The same module's UDS codes are fair game.
 		return detail, fmt.Errorf("%w: %s speaks the OBD-II modes, whose "+
 			"freeze frame is mode 02", ErrUDSNotSupported, module.Name)
 	}
