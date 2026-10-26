@@ -54,6 +54,9 @@ go build -o cargo .
 ./cargo                 # terminal UI
 ./cargo --no-tui        # one-shot report
 ./cargo --vin           # print the VIN and exit
+./cargo --detail        # report with each fault's history
+./cargo modules         # find every module and say what it is
+./cargo clear           # erase trouble codes, after asking
 ```
 
 Keys: `d` dashboard, `c` codes, `v` vehicle, `a` adapter, `q` quit.
@@ -79,6 +82,8 @@ The one-shot report has no picker, so it always connects on its own.
 | `--theme` | `terminal` keeps your background, `dark` paints its own |
 | `--no-tui` | print one report and exit |
 | `--vin` | print the VIN alone and exit |
+| `--detail` | show how often each fault happened, and at what mileage |
+| `--sweep` | look for modules at every diagnostic address first (engine off) |
 | `--debug` | verbose logging |
 
 Any flag can also be set via `CARGO_*` environment variables or

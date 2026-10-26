@@ -20,7 +20,7 @@ const detailPage = "dtc-detail"
 
 const (
 	detailCardWidth  = 72
-	detailCardHeight = 18
+	detailCardHeight = 24
 )
 
 // detailTimeout bounds the two round trips the card needs.
@@ -65,8 +65,12 @@ func (d *Displayer) showDetail() {
 		defer cancel()
 
 		detail, err := d.provider.DTCDetail(ctx, code)
+		make := ""
+		if active, ok := d.garage.Active(); ok {
+			make = active.Make
+		}
 		d.app.QueueUpdateDraw(func() {
-			d.detailText.SetText(renderDetail(code, d.resolver.Describe(code), detail, err))
+			d.detailText.SetText(renderDetail(code, d.resolver.Describe(code), detail, err, make))
 		})
 	}()
 }
@@ -82,7 +86,7 @@ func (d *Displayer) selectedCode() (dtc.DTC, bool) {
 	return d.shown[index], true
 }
 
-func renderDetail(code dtc.DTC, def dtc.Definition, detail obd.DTCDetail, err error) string {
+func renderDetail(code dtc.DTC, def dtc.Definition, detail obd.DTCDetail, err error, make string) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "\n  [::b]%s[::-]  %s\n", code.FullCode(), code.Module)
@@ -95,16 +99,16 @@ func renderDetail(code dtc.DTC, def dtc.Definition, detail obd.DTCDetail, err er
 		return b.String()
 	}
 
-	if detail.Occurrences >= 0 {
-		fmt.Fprintf(&b, "  Occurrences   [::b]%d[::-]\n", detail.Occurrences)
+	if history := detail.History(make); history.Known() {
+		fmt.Fprintf(&b, "  History       [::b]%s[::-]\n", history)
 	} else {
-		b.WriteString("  Occurrences   [gray]not reported by this module[white]\n")
+		b.WriteString("  History       [gray]not reported, or not understood for this make[white]\n")
 	}
 
-	// The bytes past the counter are the manufacturer's to define, so they
-	// are shown as they arrived rather than decoded into invented fields.
-	if len(detail.Extended) > 0 {
-		fmt.Fprintf(&b, "  Extended      [gray]%s[white]\n", hexWords(detail.Extended))
+	// Whatever the history could not account for stays visible as it
+	// arrived, rather than decoded into invented fields.
+	for _, r := range detail.Records {
+		fmt.Fprintf(&b, "  Record %02X     [gray]%s[white]\n", r.Number, hexWords(r.Data))
 	}
 
 	if detail.SnapshotIdentifiers > 0 {

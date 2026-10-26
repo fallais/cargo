@@ -319,7 +319,7 @@ const (
 
 // DTCDetail reads the occurrence counter and freeze-frame for one code.
 func (s *SerialOBD) DTCDetail(ctx context.Context, code dtc.DTC) (obd.DTCDetail, error) {
-	detail := obd.DTCDetail{Occurrences: -1}
+	var detail obd.DTCDetail
 
 	elm, err := s.adapter()
 	if err != nil {
@@ -381,16 +381,13 @@ func (s *SerialOBD) DTCDetail(ctx context.Context, code dtc.DTC) (obd.DTCDetail,
 
 	// The two reads are independent: a module may keep a counter and no
 	// snapshot, or the reverse, and one refusal should not hide the other.
-	if response, err := elm.Query(ctx, fmt.Sprintf("%02X%02X%02X%02X%02X%02X",
-		udsReadDTCInformation, subReportDTCExtendedData, hi, mid, lo, occurrenceRecord)); err == nil {
-		if count, raw, err := ParseUDSExtendedData(response); err == nil {
-			detail.Occurrences, detail.Extended = count, raw
-		} else {
-			slog.Debug("No extended data", "code", code.FullCode(), "error", err)
-		}
+	if records, err := s.readExtendedRecords(ctx, elm, hi, mid, lo); err == nil {
+		detail.Records = records
+	} else {
+		slog.Debug("No extended data", "code", code.FullCode(), "error", err)
 	}
 
-	if response, err := elm.Query(ctx, fmt.Sprintf("%02X%02X%02X%02X%02X%02X",
+	if response, err := queryAnswered(ctx, elm, fmt.Sprintf("%02X%02X%02X%02X%02X%02X",
 		udsReadDTCInformation, subReportDTCSnapshot, hi, mid, lo, allRecords)); err == nil {
 		if identifiers, raw, err := ParseUDSSnapshot(response); err == nil {
 			detail.SnapshotIdentifiers, detail.Snapshot = identifiers, raw
@@ -400,6 +397,81 @@ func (s *SerialOBD) DTCDetail(ctx context.Context, code dtc.DTC) (obd.DTCDetail,
 	}
 
 	return detail, nil
+}
+
+// readExtendedRecords reads every extended data record a module keeps for a
+// code.
+//
+// Asking for all of them at once returns the records back to back, and
+// nothing in that reply says where one ends: the lengths are the
+// manufacturer's. Asking for each record on its own does say, so the combined
+// reply is split by asking again record by record. The bytes are taken from
+// the combined reply, so a counter that moves between the two reads cannot
+// leave a mixture of the two.
+func (s *SerialOBD) readExtendedRecords(ctx context.Context, elm *ELM327, hi, mid, lo byte) ([]obd.ExtendedRecord, error) {
+	ask := func(record byte) ([]byte, error) {
+		response, err := queryAnswered(ctx, elm, fmt.Sprintf("%02X%02X%02X%02X%02X%02X",
+			udsReadDTCInformation, subReportDTCExtendedData, hi, mid, lo, record))
+		if err != nil {
+			return nil, err
+		}
+		return ParseUDSExtendedData(response)
+	}
+
+	all, err := ask(allRecords)
+	if err != nil {
+		// Not every module takes "all". The conventional occurrence
+		// record is still worth one more request.
+		one, oneErr := ask(occurrenceRecord)
+		if oneErr != nil || len(one) == 0 {
+			return nil, err
+		}
+		return []obd.ExtendedRecord{{Number: one[0], Data: one[1:]}}, nil
+	}
+
+	var records []obd.ExtendedRecord
+	for len(all) > 0 {
+		number := all[0]
+		one, err := ask(number)
+		if err != nil || len(one) < 1 || one[0] != number || len(one) > len(all) {
+			// The length cannot be learned, so keep what is left as
+			// one record rather than guess where it splits.
+			records = append(records, obd.ExtendedRecord{Number: number, Data: all[1:]})
+			break
+		}
+		records = append(records, obd.ExtendedRecord{Number: number, Data: all[1:len(one)]})
+		all = all[len(one):]
+	}
+	return records, nil
+}
+
+// queryAnswered sends a request, and again while the only reply is the module
+// asking for more time. Engine controllers do this on almost every 0x19 read,
+// and the adapter returns as soon as it sees it.
+func queryAnswered(ctx context.Context, elm *ELM327, request string) (string, error) {
+	const maxPending = 3
+	for attempt := 0; attempt < maxPending; attempt++ {
+		response, err := elm.Query(ctx, request)
+		if err != nil {
+			return "", err
+		}
+		if !onlyPending(response) {
+			return response, nil
+		}
+	}
+	return "", ErrUDSStillPending
+}
+
+// onlyPending reports whether a reply is nothing but "response pending".
+func onlyPending(response string) bool {
+	data, err := normalizeHex(response)
+	if err != nil {
+		return false
+	}
+	for len(data) >= 3 && data[0] == negativeResponse && data[2] == nrcResponsePending {
+		data = data[3:]
+	}
+	return len(data) == 0
 }
 
 // udsBytes rebuilds the three bytes a code arrived as. Raw keeps the first
@@ -422,38 +494,36 @@ func (s *SerialOBD) moduleNamed(name string) (obd.Module, bool) {
 	return obd.Module{}, false
 }
 
-// ParseUDSExtendedData decodes a service 0x19 sub-function 0x06 reply.
-//
-// The reply is the code echoed back, its status, then the record number and
-// the record itself. Only the framing is standard: what the record contains
-// is the manufacturer's, so the first byte is read as the occurrence count by
-// convention and the whole record is returned alongside for anyone who knows
-// better.
-func ParseUDSExtendedData(response string) (int, []byte, error) {
+// ParseUDSExtendedData decodes a service 0x19 sub-function 0x06 reply into
+// what follows the echoed code and status: record numbers, each followed by
+// its bytes. Only the framing is standard, and the reply does not say how long
+// each record is, so splitting it is left to the caller. A module that keeps
+// no such record answers with the header alone, which is an empty result,
+// not an error.
+func ParseUDSExtendedData(response string) ([]byte, error) {
 	if err := responseError(response); err != nil {
-		return -1, nil, err
+		return nil, err
 	}
 	data, err := normalizeHex(response)
 	if err != nil {
-		return -1, nil, err
+		return nil, err
 	}
 
 	rest, err := udsPayload(data, udsReadDTCInformation, subReportDTCExtendedData)
 	if err != nil {
-		return -1, nil, err
+		return nil, err
 	}
-	// Three bytes of code, one of status, one record number.
-	if len(rest) < 5 {
-		return -1, nil, fmt.Errorf("%w: extended data record is %d bytes",
+	// Three bytes of code and one of status.
+	if len(rest) < 4 {
+		return nil, fmt.Errorf("%w: extended data reply is %d bytes",
 			ErrUDSNoStatusBytes, len(rest))
 	}
-
-	record := rest[5:]
-	if len(record) == 0 {
-		return -1, nil, fmt.Errorf("%w: record %02X carried no data",
-			ErrUDSNoStatusBytes, rest[4])
+	records := rest[4:]
+	if len(records) == 1 {
+		return nil, fmt.Errorf("%w: record %02X carried no data",
+			ErrUDSNoStatusBytes, records[0])
 	}
-	return int(record[0]), record, nil
+	return records, nil
 }
 
 // ParseUDSSnapshot decodes a service 0x19 sub-function 0x04 reply.

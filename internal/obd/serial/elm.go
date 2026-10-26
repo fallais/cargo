@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"strings"
 	"sync"
@@ -46,12 +47,19 @@ const defaultResponseTimeout byte = 0x32
 // newer boards.
 var baudRates = []int{38400, 9600, 115200, 230400, 500000}
 
+// line is what the transport needs from a serial port. A *serial.Port is one;
+// tests supply an adapter that answers from a script.
+type line interface {
+	io.ReadWriteCloser
+	Flush() error
+}
+
 // ELM327 is the transport: it moves command strings to the adapter and
 // response strings back. It knows nothing about what those strings mean, which
 // keeps protocol handling separate from OBD semantics.
 type ELM327 struct {
 	mu       sync.Mutex
-	port     *serial.Port
+	port     line
 	reader   *bufio.Reader
 	portName string
 	baudRate int

@@ -29,7 +29,13 @@ type ScanOptions struct {
 	NoTUI       bool
 	// VIN prints the vehicle identification number and exits. Like NoTUI
 	// it never takes the screen, so stdout stays a plain value for scripts.
-	VIN     bool
+	VIN bool
+	// Sweep looks for modules at every diagnostic address before reading,
+	// rather than at the usual few. It takes a couple of minutes and needs
+	// the engine off.
+	Sweep bool
+	// Detail reads each fault's history: how often, and at what mileage.
+	Detail  bool
 	Port    string
 	Baud    int
 	Timeout time.Duration
@@ -38,7 +44,7 @@ type ScanOptions struct {
 
 // Scan connects to a vehicle and either runs the UI or prints one report.
 func Scan(ctx context.Context, opts ScanOptions) error {
-	oneShot := opts.NoTUI || opts.VIN
+	oneShot := opts.NoTUI || opts.VIN || opts.Sweep || opts.Detail
 
 	// Move logging off the terminal before anything logs at all. The UI is
 	// about to take the screen, and a line written over it corrupts the
@@ -79,15 +85,7 @@ func Scan(ctx context.Context, opts ScanOptions) error {
 		garage = &vehicle.Garage{}
 	}
 
-	// An explicit --make wins over the saved vehicle for this run, without
-	// being written back: a one-off override should not silently rewrite
-	// what the user configured.
-	make := opts.Make
-	if make == "" {
-		if active, ok := garage.Active(); ok {
-			make = active.Make
-		}
-	}
+	make := activeMake(opts.Make, garage)
 	if make != "" {
 		resolver = resolver.WithMake(make)
 	}
@@ -117,7 +115,9 @@ func Scan(ctx context.Context, opts ScanOptions) error {
 		if opts.VIN {
 			return printVIN(ctx, provider)
 		}
-		return report(ctx, provider, resolver)
+		return report(ctx, provider, resolver, reportOptions{
+			sweep: opts.Sweep, detail: opts.Detail, make: make,
+		})
 	}
 
 	if startErr != nil {
@@ -139,6 +139,19 @@ func UserCatalogPath() string {
 	return filepath.Join(dir, "cargo", "dtc.csv")
 }
 
+// activeMake is the marque lookups are made against. An explicit --make wins
+// over the saved vehicle for this run, without being written back: a one-off
+// override should not silently rewrite what the user configured.
+func activeMake(override string, garage *vehicle.Garage) string {
+	if override != "" {
+		return override
+	}
+	if active, ok := garage.Active(); ok {
+		return active.Make
+	}
+	return ""
+}
+
 // printVIN prints the vehicle identification number alone, so it can be
 // captured by a script without parsing a report around it.
 func printVIN(ctx context.Context, provider obd.OBDProvider) error {
@@ -152,9 +165,60 @@ func printVIN(ctx context.Context, provider obd.OBDProvider) error {
 
 // report prints a one-shot scan, for scripting and for when the terminal is
 // not interactive.
-func report(ctx context.Context, provider obd.OBDProvider, resolver *dtc.Resolver) error {
+func report(ctx context.Context, provider obd.OBDProvider, resolver *dtc.Resolver, opts reportOptions) error {
 	fmt.Printf("Adapter: %s\n\n", provider.Description())
 
+	if opts.sweep {
+		if _, err := sweep(ctx, provider); err != nil {
+			return err
+		}
+	}
+
+	codes, err := scanCodes(ctx, provider)
+	if err != nil {
+		return err
+	}
+
+	var history map[int]string
+	if opts.detail {
+		history = readHistory(ctx, provider, codes, opts.make)
+	}
+	printCodes(codes, resolver, history)
+	return nil
+}
+
+// reportOptions are the extras a one-shot report can be asked for.
+type reportOptions struct {
+	sweep  bool
+	detail bool
+	make   string
+}
+
+// readHistory asks each module what it kept about each of its faults, keyed
+// by the code's position. Only UDS codes carry a history; one module refusing
+// leaves the rest unaffected.
+func readHistory(ctx context.Context, provider obd.OBDProvider, codes []dtc.DTC, make string) map[int]string {
+	history := map[int]string{}
+	for i, c := range codes {
+		if !c.HasFailureType {
+			continue
+		}
+		fmt.Fprintf(os.Stderr, "\rReading history %-9s (%d/%d)", c.FullCode(), i+1, len(codes))
+		detail, err := provider.DTCDetail(ctx, c)
+		if err != nil {
+			slog.Debug("No history", "code", c.FullCode(), "error", err)
+			continue
+		}
+		if h := detail.History(make); h.Known() {
+			history[i] = h.String()
+		}
+	}
+	fmt.Fprintln(os.Stderr)
+	return history
+}
+
+// scanCodes reads every module, showing progress.
+func scanCodes(ctx context.Context, provider obd.OBDProvider) ([]dtc.DTC, error) {
 	// Progress goes to stderr: a walk across every module takes tens of
 	// seconds, and stdout is the report itself, which stays scriptable.
 	codes, err := provider.GetDTCs(ctx, func(p obd.ScanProgress) {
@@ -162,22 +226,27 @@ func report(ctx context.Context, provider obd.OBDProvider, resolver *dtc.Resolve
 	})
 	fmt.Fprintln(os.Stderr)
 	if err != nil {
-		return fmt.Errorf("read trouble codes: %w", err)
+		return nil, fmt.Errorf("read trouble codes: %w", err)
 	}
+	return codes, nil
+}
 
+// printCodes lists codes grouped by the module that reported them, each with
+// its history underneath where one was read.
+func printCodes(codes []dtc.DTC, resolver *dtc.Resolver, history map[int]string) {
 	if len(codes) == 0 {
 		fmt.Println("No trouble codes reported.")
-		return nil
+		return
 	}
 
 	// Group by module so each ECU's faults read together.
-	byModule := map[string][]dtc.DTC{}
-	for _, c := range codes {
+	byModule := map[string][]int{}
+	for i, c := range codes {
 		module := c.Module
 		if module == "" {
 			module = "unattributed"
 		}
-		byModule[module] = append(byModule[module], c)
+		byModule[module] = append(byModule[module], i)
 	}
 
 	modules := make([]string, 0, len(byModule))
@@ -189,7 +258,8 @@ func report(ctx context.Context, provider obd.OBDProvider, resolver *dtc.Resolve
 	var failing, lamps int
 	for _, module := range modules {
 		fmt.Printf("%s\n", module)
-		for _, c := range byModule[module] {
+		for _, i := range byModule[module] {
+			c := codes[i]
 			description := resolver.Describe(c).Description
 			if failure := c.FailureTypeName(); failure != "" {
 				description = fmt.Sprintf("%s (%s)", description, failure)
@@ -201,6 +271,9 @@ func report(ctx context.Context, provider obd.OBDProvider, resolver *dtc.Resolve
 				lamps++
 			}
 			fmt.Printf("  %-9s  %-9s  %-5s  %s\n", c.FullCode(), c.Status, flags(c), description)
+			if h, ok := history[i]; ok {
+				fmt.Printf("  %-9s  %-9s  %-5s  %s\n", "", "", "", h)
+			}
 		}
 		fmt.Println()
 	}
@@ -213,7 +286,6 @@ func report(ctx context.Context, provider obd.OBDProvider, resolver *dtc.Resolve
 	if failing > 0 || lamps > 0 {
 		fmt.Println("now = present when the module was asked; ! = the module is asking for a warning lamp.")
 	}
-	return nil
 }
 
 // flags marks what a UDS status byte says beyond stored or pending: whether

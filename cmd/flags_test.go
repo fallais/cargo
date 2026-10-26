@@ -28,6 +28,20 @@ func TestRootAndScanShareScanFlags(t *testing.T) {
 	}
 }
 
+// Clear binds by name too, and a missing flag would only fail when run.
+func TestClearDeclaresItsFlags(t *testing.T) {
+	for _, name := range clearFlagNames {
+		if clearCmd.Flags().Lookup(name) == nil {
+			t.Errorf("clear command is missing --%s", name)
+		}
+	}
+	for _, name := range modulesFlagNames {
+		if modulesCmd.Flags().Lookup(name) == nil {
+			t.Errorf("modules command is missing --%s", name)
+		}
+	}
+}
+
 // Every flag a command binds must exist, or bindFlags fails at run time on a
 // path that may not be covered elsewhere.
 func TestBindFlagsRejectsUnknown(t *testing.T) {

@@ -1,6 +1,9 @@
 package obd
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // A Module is an ECU we can address individually.
 type Module struct {
@@ -19,7 +22,53 @@ type Module struct {
 	// answer the OBD-II modes, and may keep further faults over UDS; the
 	// rest answer UDS 0x19 or KWP2000 only.
 	Standard bool
+	// Manufacturer is the protocol the module's own fault memory answered
+	// in the last scan, so that clearing it goes the same way.
+	Manufacturer Protocol
+	// Readable is whether its fault memory answered in the last scan. A
+	// sweep finds modules that answer to their address but read no faults.
+	Readable bool
 }
+
+// Identity is what a module says about itself. Any field may be empty: the
+// UDS identifiers are standard, but not every module implements them.
+type Identity struct {
+	PartNumber string // UDS F187, the manufacturer's spare part number
+	Hardware   string // F191
+	Software   string // F195
+	Supplier   string // F18A
+	System     string // F197, the module's own name for what it is
+	// Other is identification in a form that is not standardised, such as
+	// the KWP2000 local identifier 0x80, given as its readable runs.
+	Other string
+}
+
+// String joins what is known, most specific first.
+func (i Identity) String() string {
+	var parts []string
+	for _, p := range []string{i.PartNumber, i.Supplier, i.System} {
+		if p != "" {
+			parts = append(parts, p)
+		}
+	}
+	if i.Software != "" {
+		parts = append(parts, "sw "+i.Software)
+	}
+	if len(parts) == 0 && i.Other != "" {
+		parts = append(parts, i.Other)
+	}
+	return strings.Join(parts, " · ")
+}
+
+// Protocol is a manufacturer diagnostic protocol.
+type Protocol uint8
+
+const (
+	// NoProtocol means the module answered only the OBD-II modes.
+	NoProtocol Protocol = iota
+	UDS
+	KWP2000
+)
 
 func (m Module) String() string {
 	return fmt.Sprintf("%s (%03X)", m.Name, m.Request)

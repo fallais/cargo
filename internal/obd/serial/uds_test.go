@@ -250,24 +250,31 @@ func TestParseUDSDTCsKeepsWarningRecords(t *testing.T) {
 }
 
 func TestParseUDSExtendedData(t *testing.T) {
-	// 59 06, code C1A60-7B, status A8, record 01, then the record: an
-	// occurrence count of 12 followed by manufacturer bytes.
-	count, raw, err := ParseUDSExtendedData("59065A607BA8010C0300")
+	// 59 06, code C1A60-7B, status A8, then record 01 holding 0C 03 00.
+	records, err := ParseUDSExtendedData("59065A607BA8010C0300")
 	if err != nil {
 		t.Fatalf("ParseUDSExtendedData: %v", err)
 	}
-	if count != 12 {
-		t.Errorf("occurrences = %d, want 12", count)
+	if got, want := hexString(records), "010C0300"; got != want {
+		t.Errorf("records = %s, want %s", got, want)
 	}
-	if got, want := len(raw), 3; got != want {
-		t.Errorf("record length = %d, want %d", got, want)
+}
+
+// A module asked for a record it does not keep answers with the header alone.
+func TestParseUDSExtendedDataNoRecord(t *testing.T) {
+	records, err := ParseUDSExtendedData("590608332928")
+	if err != nil {
+		t.Fatalf("ParseUDSExtendedData: %v", err)
+	}
+	if len(records) != 0 {
+		t.Errorf("records = % X, want none", records)
 	}
 }
 
 func TestParseUDSExtendedDataRejectsTruncated(t *testing.T) {
 	for _, in := range []string{"59065A607B", "59065A607BA801", "7F1911"} {
-		if count, _, err := ParseUDSExtendedData(in); err == nil {
-			t.Errorf("ParseUDSExtendedData(%q) = %d, want an error", in, count)
+		if records, err := ParseUDSExtendedData(in); err == nil {
+			t.Errorf("ParseUDSExtendedData(%q) = % X, want an error", in, records)
 		}
 	}
 }

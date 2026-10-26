@@ -451,6 +451,9 @@ func (s *SerialOBD) GetDTCs(ctx context.Context, progress func(obd.ScanProgress)
 	var (
 		found   []dtc.DTC
 		present []obd.Module
+		// learned is every module walked, with what this walk found out
+		// about it: where it answers, over what, and whether it did.
+		learned []obd.Module
 	)
 
 	s.mu.RLock()
@@ -471,6 +474,8 @@ func (s *SerialOBD) GetDTCs(ctx context.Context, progress func(obd.ScanProgress)
 
 		module := module // a copy: readModule fills in a discovered address
 		codes, err := s.readModule(ctx, elm, &module)
+		module.Readable = err == nil
+		learned = append(learned, module)
 		if err != nil {
 			// A module that is not fitted, or that speaks a protocol we
 			// do not, is an ordinary outcome on a scan across makes.
@@ -496,15 +501,20 @@ func (s *SerialOBD) GetDTCs(ctx context.Context, progress func(obd.ScanProgress)
 		Done:     true,
 	})
 
-	// Narrow future scans to what actually replied.
-	if !scanned && len(present) > 0 {
-		s.mu.Lock()
+	// Narrow future scans to what actually replied. A list that is already
+	// settled, by an earlier scan or by a sweep, keeps every module but
+	// takes in what this walk learned about each.
+	s.mu.Lock()
+	switch {
+	case !scanned && len(present) > 0:
 		s.modules = present
 		s.scanned = true
-		s.mu.Unlock()
 		slog.Info("Module scan complete",
 			"responding", len(present), "probed", len(modules))
+	case scanned && len(learned) == len(s.modules):
+		s.modules = learned
 	}
+	s.mu.Unlock()
 
 	if err := elm.ClearReceiveFilter(ctx); err != nil {
 		slog.Warn("Restoring receive filter", "error", err)
@@ -569,11 +579,17 @@ func (s *SerialOBD) readModule(ctx context.Context, elm *ELM327, m *obd.Module) 
 		if err := elm.SetReceiveFilter(ctx, m.Response); err != nil {
 			return nil, fmt.Errorf("filter %s: %w", m, err)
 		}
-		codes, err := s.readModes(ctx, elm, m.Name)
-		if err != nil {
-			return nil, err
+		// Either way of asking may go unanswered on its own: a Bosch
+		// engine ECU with the ignition on and the engine stopped says
+		// nothing to the OBD-II modes and answers UDS as usual. Only
+		// both staying silent means there is no module here.
+		codes, modesErr := s.readModes(ctx, elm, m.Name)
+		extra, protocol := s.readStandardExtra(ctx, elm, m.Name)
+		m.Manufacturer = protocol
+		if modesErr != nil && protocol == obd.NoProtocol {
+			return nil, modesErr
 		}
-		return mergeCodes(codes, s.readStandardExtra(ctx, elm, m.Name)), nil
+		return mergeCodes(codes, extra), nil
 	}
 
 	// Locate the module first, while nothing is configured for it: with
@@ -626,8 +642,9 @@ func (s *SerialOBD) readModule(ctx context.Context, elm *ELM327, m *obd.Module) 
 		}
 	}()
 
-	codes, err := s.readManufacturerDTCs(ctx, elm, m.Name, true)
+	codes, protocol, err := s.readManufacturerDTCs(ctx, elm, m.Name, true)
 	if err == nil {
+		m.Manufacturer = protocol
 		return codes, nil
 	}
 
@@ -644,21 +661,29 @@ func (s *SerialOBD) readModule(ctx context.Context, elm *ELM327, m *obd.Module) 
 }
 
 // readManufacturerDTCs reads a module's faults over UDS, falling back to
-// KWP2000 for a module that refuses the UDS service.
-func (s *SerialOBD) readManufacturerDTCs(ctx context.Context, elm *ELM327, module string, allowSession bool) ([]dtc.DTC, error) {
+// KWP2000 for a module that refuses the UDS service. It reports which of the
+// two answered.
+func (s *SerialOBD) readManufacturerDTCs(ctx context.Context, elm *ELM327, module string, allowSession bool) ([]dtc.DTC, obd.Protocol, error) {
 	codes, err := s.readDTCsUDS(ctx, elm, module, udsStatusMask, allowSession)
-	if err == nil || !needsSession(err) {
-		return codes, err
+	if err == nil {
+		return codes, obd.UDS, nil
+	}
+	if !needsSession(err) {
+		return nil, obd.NoProtocol, err
 	}
 
 	slog.Debug("Module rejected UDS, trying KWP2000", "module", module, "error", err)
-	return s.readDTCsKWP(ctx, elm, module, allowSession)
+	codes, err = s.readDTCsKWP(ctx, elm, module, allowSession)
+	if err != nil {
+		return nil, obd.NoProtocol, err
+	}
+	return codes, obd.KWP2000, nil
 }
 
 // readStandardExtra asks an emissions controller for the faults the OBD-II
 // modes do not carry. It never changes the module's session, and a refusal is
 // only logged: the modes have already answered, so nothing is lost.
-func (s *SerialOBD) readStandardExtra(ctx context.Context, elm *ELM327, module string) []dtc.DTC {
+func (s *SerialOBD) readStandardExtra(ctx context.Context, elm *ELM327, module string) ([]dtc.DTC, obd.Protocol) {
 	if err := elm.SetResponseTimeout(ctx, udsResponseTimeout); err != nil {
 		slog.Debug("Could not extend the adapter timeout", "error", err)
 	}
@@ -668,12 +693,12 @@ func (s *SerialOBD) readStandardExtra(ctx context.Context, elm *ELM327, module s
 		}
 	}()
 
-	codes, err := s.readManufacturerDTCs(ctx, elm, module, false)
+	codes, protocol, err := s.readManufacturerDTCs(ctx, elm, module, false)
 	if err != nil {
 		slog.Debug("No manufacturer fault memory", "module", module, "error", err)
-		return nil
+		return nil, obd.NoProtocol
 	}
-	return codes
+	return codes, protocol
 }
 
 // mergeCodes adds the manufacturer read to the OBD-II one, dropping codes the
@@ -707,6 +732,9 @@ const udsLocateRequest = "22F190"
 // know is to listen on each in turn.
 var responseOffsets = []uint16{0x08, 0x20}
 
+// maxStandardID is the highest eleven-bit CAN identifier.
+const maxStandardID uint16 = 0x7FF
+
 // discoverResponse finds which identifier a module answers on, by asking with
 // the receive filter set to each convention until one produces a reply.
 //
@@ -719,6 +747,11 @@ func (s *SerialOBD) discoverResponse(ctx context.Context, elm *ELM327, m obd.Mod
 
 	for _, offset := range responseOffsets {
 		candidate := m.Request + offset
+		// Eleven-bit identifiers stop at 7FF; past it there is no one to
+		// listen for.
+		if candidate > maxStandardID {
+			continue
+		}
 
 		if err := elm.SetReceiveFilter(ctx, candidate); err != nil {
 			return 0, err
@@ -786,39 +819,6 @@ func (s *SerialOBD) readModes(ctx context.Context, elm *ELM327, module string) (
 		return nil, ErrNoData
 	}
 	return found, nil
-}
-
-// ClearDTCs erases stored codes via mode 04.
-func (s *SerialOBD) ClearDTCs(ctx context.Context) error {
-	elm, err := s.adapter()
-	if err != nil {
-		return err
-	}
-
-	if err := s.acquireBus(ctx); err != nil {
-		return err
-	}
-	defer s.releaseBus()
-
-	resp, err := elm.Query(ctx, "04")
-	if err != nil {
-		return fmt.Errorf("clear codes: %w", err)
-	}
-	if err := responseError(resp); err != nil {
-		return fmt.Errorf("clear codes: %w", err)
-	}
-
-	// A positive reply to mode 04 is 0x44.
-	data, err := normalizeHex(resp)
-	if err != nil {
-		return err
-	}
-	if _, ok := payload(data, 0x04); !ok {
-		return fmt.Errorf("%w: mode 04 returned %q", ErrParse, resp)
-	}
-
-	slog.Info("Stored trouble codes cleared")
-	return nil
 }
 
 // EnterLowPower puts the adapter to sleep to avoid draining the battery when
